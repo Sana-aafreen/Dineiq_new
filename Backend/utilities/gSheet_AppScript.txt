@@ -1,0 +1,1072 @@
+/**
+ * Google Apps Script (GS) for running time-based multi-channel campaigns.
+ *
+ * - Reads Campaigns, Chats, and Customer_Insights sheets
+ * - Matches customers using inferred multi-dimensional categories
+ * - Sends Email / SMS / WhatsApp (quota-aware)
+ * - Uses PropertiesService to prevent duplicate sends per day
+ *
+ * Fully production-safe and trigger-ready.
+ */
+
+/* ============================================================
+   GLOBAL CONFIGURATION
+============================================================ */
+
+// Properties service instance for sent-message tracking
+const SCRIPT_PROPERTIES = PropertiesService.getScriptProperties();
+
+/* ============================================================
+   SENT STATUS TRACKING (NO SHEET MODIFICATION)
+============================================================ */
+
+/**
+ * Generates a unique key for tracking sent status per campaign message per day.
+ */
+function getSentKey(campaignId, messageNumber) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const today = Utilities.formatDate(
+    new Date(),
+    ss.getSpreadsheetTimeZone(),
+    'yyyy-MM-dd'
+  );
+  return `${campaignId}-${messageNumber}-${today}`;
+}
+
+/**
+ * Checks whether a campaign message has already been sent today.
+ */
+function wasSentToday(campaignId, messageNumber) {
+  return SCRIPT_PROPERTIES.getProperty(
+    getSentKey(campaignId, messageNumber)
+  ) === 'SENT';
+}
+
+/**
+ * Marks a campaign message as sent for today.
+ */
+function setSentLog(campaignId, messageNumber) {
+  const key = getSentKey(campaignId, messageNumber);
+  SCRIPT_PROPERTIES.setProperty(key, 'SENT');
+  Logger.log('✔ Sent log recorded: %s', key);
+}
+
+
+/* ============================================================
+   GENERIC SHEET DATA FETCHING
+============================================================ */
+
+/**
+ * Reads a sheet and converts rows into objects using header row as keys.
+ */
+function getDataFromSheet(sheetName) {
+  try {
+    const ss = SpreadsheetApp.getActiveSpreadsheet();
+    const sheet = ss.getSheetByName(sheetName);
+    if (!sheet) return [];
+
+    const values = sheet.getDataRange().getValues();
+    if (values.length < 2) return [];
+
+    const headers = values[0];
+    return values.slice(1).map((row, idx) => {
+      const obj = { __rowIndex: idx + 2 };
+      headers.forEach((h, i) => (obj[h] = row[i]));
+      return obj;
+    });
+  } catch (e) {
+    Logger.log('❌ Error reading sheet "%s": %s', sheetName, e.toString());
+    return [];
+  }
+}
+
+/* ============================================================
+   CUSTOMER DATA FETCHING
+============================================================ */
+/**
+ * Fetches customers from Customer_Auth with centralized categories
+ */
+function getCustomersFromAuth() {
+  return getDataFromSheet('Customer_Auth')
+    .map(r => ({
+      id: r['Customer_ID'],
+      name: r['Customer_Name'],
+      email: r['Customer_Email'],
+      phone: r['Customer_Phone'],
+      category: r['Customer_Category'] || ''
+    }))
+    .filter(c => c.id && c.category);
+}
+
+/* ============================================================
+   CAMPAIGN DATA FETCHING
+============================================================ */
+
+/**
+ * Fetches campaign configuration.
+ */
+function getCampaignsData() {
+  return getDataFromSheet('Campaigns').map(row => {
+    const c = {
+      id: row['Campaign_ID'],
+      text: row['Campaign_Text'],
+      category: row['Target_Customer_Category'],
+      count: Number(row['Campaign_Message_Count']) || 0,
+      status: row['Campaign_Status'],
+      type: row['Campaign_Type']
+    };
+
+    for (let i = 1; i <= 10; i++) {
+      c[`temp${i}`] = row[`Message_Template #${i}`] || '';
+      c[`time${i}`] = row[`Message_Send_Timing #${i}`] || '';
+    }
+
+    return c;
+  });
+}
+
+
+/* ============================================================
+   TIME NORMALIZATION & CHECKS
+============================================================ */
+
+/**
+ * Normalizes time values into HH:MM format.
+ */
+function normalizeTime(val) {
+  if (val instanceof Date) {
+    return Utilities.formatDate(val, Session.getScriptTimeZone(), 'HH:mm');
+  }
+  if (typeof val === 'string') {
+    return val.split(':').slice(0, 2).join(':');
+  }
+  return '';
+}
+
+/**
+ * Checks if current time is >= scheduled time.
+ */
+function isTimeReadyForSend(timeHHMM, now) {
+  if (!timeHHMM) return false;
+  const [h, m] = timeHHMM.split(':').map(Number);
+  return (now.getHours() * 60 + now.getMinutes()) >= (h * 60 + m);
+}
+
+
+/* ============================================================
+   MESSAGE SENDING (EMAIL / SMS / WHATSAPP)
+============================================================ */
+
+/**
+ * Implements actual SMS sending using the Twilio REST API via Google Apps Script's UrlFetchApp service.
+ * Twilio Free Account Daily SMS Limit: 50
+ * @param {string} msg_from The sender's phone number in E.164 format (e.g., '+919876543210').
+ * @param {string} msg_to The recipient's phone number in E.164 format (e.g., '+919876543210').
+ * @param {string} msg_text The message body to be sent via SMS.
+ * @returns {boolean} True if the SMS was successfully triggered and accepted by Twilio, false otherwise.
+ */
+const SMS_MSG_FROM="+18782511984" // TWILIO sender's number
+const SMS_MSG_TO="+919986758671"  // receiver's number
+function trigger_sms(msg_from, msg_to, msg_text) {
+  try {
+    var sid = SCRIPT_PROPERTIES.getProperty('TWILIO_ACCOUNT_SID');
+    var token = SCRIPT_PROPERTIES.getProperty('TWILIO_AUTH_TOKEN');
+    
+    var payload = {
+      To: msg_to,
+      From: msg_from,
+      Body: msg_text
+    };
+
+    var options = {
+      method: "post",
+      payload: payload,
+      headers: {
+        Authorization: "Basic " + Utilities.base64Encode(sid + ":" + token)
+      },
+      muteHttpExceptions: true
+    };
+
+    var response = UrlFetchApp.fetch("https://api.twilio.com/2010-04-01/Accounts/" + sid + "/Messages.json", options);
+    var result = JSON.parse(response.getContentText());
+
+    if (result.sid) {
+      Logger.log("SUCCESS: SMS sent to %s (SID: %s)", msg_to, result.sid);
+      return true;
+    } else if (result.code === 63038) {
+      Logger.log("QUOTA ERROR: Twilio SMS daily limit hit.");
+      throw new Error('QUOTA_EXCEEDED');
+    } else {
+      Logger.log("ERROR: Failed to send SMS to %s. Response: %s", msg_to, response.getContentText());
+      return false;
+    }
+  } catch (e) {
+    Logger.log("EXCEPTION: SMS sending failed to %s. Error: %s", msg_to, e.toString());
+    return false;
+  }
+}
+
+/**
+ * Implements actual WhatsApp message sending using the Twilio WhatsApp API via Google Apps Script's UrlFetchApp service.
+ * Twilio Free Account Daily WhatsApp Message Limit: 50
+ * @param {string} msg_from The Twilio-registered WhatsApp sender number (prefixed with 'whatsapp:', e.g., 'whatsapp:+14155238886').
+ * @param {string} msg_to The recipient's WhatsApp phone number in E.164 format (prefixed with 'whatsapp:', e.g., 'whatsapp:+919876543210').
+ * @param {string} msg_text The message body to be sent via WhatsApp.
+ * @returns {boolean} True if the WhatsApp message was successfully triggered and accepted by Twilio, false otherwise.
+ */
+const WHATSAPP_MSG_FROM="whatsapp:+14155238886" // TWILIO sender's whatsapp number
+const WHATSAPP_MSG_TO="whatsapp:+919986758671"  // receiver's whatsapp number
+function trigger_whatsapp_msg(msg_from, msg_to, msg_text) {
+  try {
+    var sid = SCRIPT_PROPERTIES.getProperty('TWILIO_ACCOUNT_SID');
+    var token = SCRIPT_PROPERTIES.getProperty('TWILIO_AUTH_TOKEN');
+
+    var payload = {
+      To: msg_to,
+      From: msg_from,
+      Body: msg_text
+    };
+
+    var options = {
+      method: "post",
+      payload: payload,
+      headers: {
+        Authorization: "Basic " + Utilities.base64Encode(sid + ":" + token)
+      },
+      muteHttpExceptions: true
+    };
+
+    var response = UrlFetchApp.fetch("https://api.twilio.com/2010-04-01/Accounts/" + sid + "/Messages.json", options);
+    var result = JSON.parse(response.getContentText());
+
+    if (result.sid) {
+      Logger.log("SUCCESS: WhatsApp message sent to %s (SID: %s)", msg_to, result.sid);
+      return true;
+    } else if (result.code === 63038) {
+      Logger.log("QUOTA ERROR: Twilio WhatsApp daily limit hit.");
+      throw new Error('QUOTA_EXCEEDED');
+    } else {
+      Logger.log("ERROR: Failed to send WhatsApp message to %s. Response: %s", msg_to, response.getContentText());
+      return false;
+    }
+  } catch (e) {
+    Logger.log("EXCEPTION: WhatsApp sending failed to %s. Error: %s", msg_to, e.toString());
+    return false;
+  }
+}
+
+/**
+ * Implements actual email sending using Google Apps Script's built-in MailApp service.
+ * Google Email API Daily Email Limit: 100
+ * @param {string} msg_from The sender's email address.
+ * @param {string} msg_to The recipient's email address.
+ * @param {string} msg_sub The subject of the email.
+ * @param {string} msg_text The body of the email (Template and Time info).
+ * @returns {boolean} True if the email was successfully triggered, false otherwise.
+ */
+const EMAIL_MSG_FROM  = "Umang.Malhotra@webisdom.com" // sender's email id
+// const EMAIL_MSG_TO    = "UmangMalhotra1980@gmail.com" // receiver's email id
+function trigger_email(msg_from, msg_to, msg_sub, msg_text) {
+    try {
+        MailApp.sendEmail({
+            to: msg_to,
+            subject: msg_sub,
+            body: msg_text,
+            name: msg_from // Set the sender's name
+        });
+        Logger.log('SUCCESS: Email sent to %s for subject: %s', msg_to, msg_sub);
+        return true;
+    } catch (e) {
+        // Check specifically for the quota error string to handle it gracefully
+        if (e.toString().includes('Service invoked too many times for one day: email')) {
+            Logger.log('QUOTA ERROR: Daily email limit hit. Stopping further email attempts today.');
+            throw new Error('QUOTA_EXCEEDED'); // Throw a custom error flag
+        }
+        Logger.log('ERROR: Failed to send email to %s. Subject: %s. Error: %s', msg_to, msg_sub, e.toString());
+        return false;
+    }
+}
+
+// --- doGet MAIN FUNCTION ---
+
+/**
+ * The main function to run the campaign check.
+ * - Reads campaigns and customer chats.
+ * - Matches customers by chat category.
+ * - Sends Email, SMS, WhatsApp messages.
+ * - Manages separate per-day quotas for each channel.
+ * - Does NOT update or modify any Google Sheet data.
+ * This should be set up as a time-driven trigger in Google Apps Script, OR
+ * can be called by doGet() when deployed as a Web App.
+ *
+ * Logic uses PropertiesService to track sent status for the day, preventing duplicates.
+ *
+ * @returns {string} A status message indicating the completion of the check.
+ */
+function main_campaign_runner() {
+  // --- 1. Get Current Time in Spreadsheet Timezone ---
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const now = new Date();
+
+  // Use Utilities.formatDate to adjust 'now' to the correct timezone for display/logging
+  const nowInTZ = Utilities.formatDate(now, ss.getSpreadsheetTimeZone(), 'HH:mm:ss');
+  Logger.log('Script execution time (Spreadsheet TZ): %s', nowInTZ);
+
+  // --- 2. Load Campaigns and Customers ---
+  const campaigns = getCampaignsData();
+  const customers = getCustomersFromAuth();
+
+  let msgsTriggered = 0;
+  let quotaHit = { email: false, sms: false, whatsapp: false };
+
+  Logger.log(
+    'Loaded %d campaigns and %d customers from Customer_Auth',
+    campaigns.length,
+    customers.length
+  );
+
+  // Use a try/catch block around the entire processing loop to catch the QUOTA_EXCEEDED flag
+  try {
+    campaigns.forEach(campaign => {
+      // Check for required status, Only ACTIVE/UPCOMING
+      if (!['ACTIVE', 'UPCOMING'].includes(campaign.status)) {
+        // Logger.log(`SKIP: Campaign ${campaign.id} ignored due to status "${campaign.status}"`);
+        return;
+      }
+
+      // Campaign target categories (comma-separated)
+      const requiredCategories = campaign.category
+        .toLowerCase()
+        .split(',')
+        .map(x => x.trim())
+        .filter(Boolean);
+
+      // Define the templates and timings to check based *strictly* on Campaign Message Count dynamically (1–10)
+      for (let i = 1; i <= campaign.count; i++) {
+        const template = campaign[`temp${i}`];
+        const timing = normalizeTime(campaign[`time${i}`]);
+
+        if (!template || !timing) continue;
+
+        // CRITICAL STEP 1: Check if the time is ready (current time >= scheduled time)
+        if (!isTimeReadyForSend(timing, now)) {
+          Logger.log(
+            'SKIP: Campaign %s Msg#%s not yet time (%s)',
+            campaign.id,
+            i,
+            timing
+          );
+          continue;
+        }
+
+        // Already sent today?
+        // It considers all mediums SMS, WhatsApp and Email
+        // It considers as SENT even if partial medium were successfull in sending msg.
+        if (wasSentToday(campaign.id, i)) {
+          Logger.log(
+            'SKIP: Campaign %s Msg#%s already sent today',
+            campaign.id,
+            i
+          );
+          continue;
+        }
+
+        // Time is ready AND not sent today, trigger sms/whatsapp/email
+        Logger.log(
+          'SENDING: Campaign %s Msg#%s (%s)',
+          campaign.id,
+          i,
+          timing
+        );
+
+        // --- Match customers by Customer_Auth.Customer_Category ---
+        // Campaign category must be found in one of the comma-separated words in customer's category
+        const matched = customers.filter(cust => {
+          const customerCategories = cust.category
+            .toLowerCase()
+            .split(',')
+            .map(x => x.trim())
+            .filter(Boolean);
+
+          // OR logic: ANY campaign category matches ANY customer category
+          return requiredCategories.some(rc =>
+            customerCategories.includes(rc)
+          );
+        });
+
+        if (!matched.length) {
+        Logger.log(
+            '⚠ No customers matched for Campaign %s | Target: %s',
+            campaign.id,
+            campaign.category
+          );
+        continue;
+        }
+        
+        Logger.log(
+          'Matched %d customers for Campaign %s | Target: %s',
+          matched.length,
+          campaign.id,
+          campaign.category
+        );
+
+        // --- Send messages ---
+        matched.forEach(cust => {
+          
+          if (quotaHit.email && quotaHit.sms && quotaHit.whatsapp) return; // stop all if all limits hit
+          
+          const msg_sub = `[${campaign.id}] Campaign Message #${i} - Scheduled at ${timing}`;
+          const msg_text = `Hi ${cust.name || 'Customer'}, \nTemplate: ${template}\nTime: ${timing}`;
+
+          // --- Call Email Function ---
+          if (!quotaHit.email && cust.email) {
+            try {
+              const success = trigger_email(
+                EMAIL_MSG_FROM, // test sender's email address
+                cust.email,
+                msg_sub,
+                msg_text
+              );
+              if (!success) Logger.log('Email failed for %s', cust.email);
+            } catch (e) {
+              if (e.message === 'QUOTA_EXCEEDED') {
+                quotaHit.email = true;
+                Logger.log('Email quota reached.');
+              }
+            }
+          }
+
+          // --- Call SMS Function ---
+          // if (!quotaHit.sms && cust.phone) {
+          //   try {
+          //     const success = trigger_sms(
+          //       SMS_MSG_FROM, // Twilio test sender's phone number
+          //       cust.phone,
+          //       msg_text
+          //       );
+          //     if (!success) Logger.log('SMS failed for %s', cust.phone);
+          //   } catch (e) {
+          //     if (e.message === 'QUOTA_EXCEEDED') {
+          //       quotaHit.sms = true;
+          //       Logger.log('SMS quota reached.');
+          //     } else {
+          //       Logger.log('SMS Error: %s', e.toString());
+          //     }
+          //   }
+          // }
+
+          // --- Call WhatsApp Function ---
+          // if (!quotaHit.whatsapp && cust.phone) {
+          //   try {
+          //     const formattedPhone = 'whatsapp:' + cust.phone.replace(/\s|\+|-/g, '');
+          //     const success = trigger_whatsapp_msg(
+          //       WHATSAPP_MSG_FROM, // Twilio test whatsapp sender's phone number
+          //       formattedPhone,
+          //       msg_text
+          //     );
+          //     if (!success) Logger.log('WhatsApp failed for %s', cust.phone);
+          //   } catch (e) {
+          //     if (e.message === 'QUOTA_EXCEEDED') {
+          //       quotaHit.whatsapp = true;
+          //       Logger.log('WhatsApp quota reached.');
+          //     } else {
+          //       Logger.log('WhatsApp Error: %s', e.toString());
+          //     }
+          //   }
+          // }
+          });
+          setSentLog(campaign.id, i);
+          msgsTriggered++;
+      }
+    });
+  } catch (e) {
+    Logger.log('Execution stopped with error: %s', e.toString());
+    throw e;
+  }
+
+  Logger.log('Completed campaigns. Messages triggered: %d', msgsTriggered);
+  return `Completed at ${nowInTZ}. Messages triggered: ${msgsTriggered}`;
+}
+
+// ==================== OTP Logic Starts ====================
+
+// ----- Helper: SHA-256 Hash -----
+// function sha256(text) {
+//   return Utilities.computeDigest(
+//     Utilities.DigestAlgorithm.SHA_256,
+//     text
+//   ).map(b => ('0' + (b & 0xFF).toString(16)).slice(-2)).join('');
+// }
+
+// ----- Helper: Get next customer id -----
+// function getNextCustomerId(sheet) {
+//   // Plz dont delete this test code ---
+//   // console.log("🔥 getNextCustomerId STARTED");
+//   // const ss = SpreadsheetApp.getActive();
+//   // const sheet = ss.getSheetByName("Customer_Auth");
+
+//   const lastRow = sheet.getLastRow();
+//   if (lastRow < 2) {
+//     // console.log("Only header found. Returning Cust_0001");
+//     return "Cust_0001";
+//   }
+
+//   const ids = sheet.getRange(2, 1, lastRow - 1, 1).getValues().flat();
+
+//   let maxNum = 0;
+//   ids.forEach(id => {
+//     if (id && typeof id === "string" && id.startsWith("Cust_")) {
+//       const num = parseInt(id.replace("Cust_", ""), 10);
+//       if (!isNaN(num)) maxNum = Math.max(maxNum, num);
+//     }
+//   });
+
+//   const nextId = `Cust_${String(maxNum + 1).padStart(4, "0")}`;
+//   // console.log("Next Customer ID =", nextId);
+
+//   return nextId;
+// }
+
+// ----- Send OTP -----
+// function handleSendOtp(name, mobile, email) {
+//   // Plz dont delete this test code ---
+//   // name="Umang";
+//   // mobile="9876543210";
+//   // email="Umang.Malhotra@webisdom.com"
+  
+//   const ss = SpreadsheetApp.getActive();
+//   const sheet = ss.getSheetByName("Customer_Auth");
+//   if (!sheet) throw new Error("Customer_Auth sheet not found");
+
+//   const data = sheet.getDataRange().getValues();
+//   const otp = Math.floor(100000 + Math.random() * 900000).toString();
+//   const otpHash = sha256(otp);
+//   const expiresAt = Date.now() + 5 * 60 * 1000; // 5 min
+
+//   let rowFound = false;
+
+//   for (let i = 1; i < data.length; i++) {
+//     // Column C = index 2 (Customer_Email)
+//     if (data[i][2] === email) {
+//       // fill otp, hash and expiry values
+//       sheet.getRange(i + 1, 5).setValue(otpHash);      // Column E = OTP_Hash
+//       sheet.getRange(i + 1, 6).setValue(expiresAt);    // Column F = OTP_Expires_At
+//       sheet.getRange(i + 1, 7).setValue(new Date());   // Column G = Creation_DateTime
+//       rowFound = true;
+//       // console.log("email matched in the sheet");
+//       break;
+//     }
+//   }
+
+//   // no existing customer with this email id
+//   if (!rowFound) {
+//     // generate next customer id
+//     const customerId = getNextCustomerId(sheet);
+//     // console.log("Next Customer ID =", customerId);
+//     // SpreadsheetApp.getUi().alert("Customer ID ->" + customerId + "<-" + "email ->" + email + "<-");
+//     sheet.appendRow([
+//       customerId,  // Customer_ID
+//       name,        // Customer_Name
+//       email,       // Customer_Email
+//       mobile,      // Customer_Phone
+//       otpHash,     // OTP_Hash
+//       expiresAt,   // OTP_Expires_At
+//       new Date(),  // Creation_DateTime
+//       ""           // Last_Login_DateTime
+//     ]);
+
+//   }
+
+//   // prepare data for email
+//   msg_from  = EMAIL_MSG_FROM;
+//   msg_to    = email;
+//   msg_sub   = "Your Login OTP";
+//   msg_text  = `"Your OTP is ${otp}. Valid for 5 minutes.`;
+
+//   // send OTP email to customer
+//   trigger_email(msg_from, msg_to, msg_sub, msg_text);
+  
+//   // Plz dont delete this test code ---
+//   // MailApp.sendEmail({
+//   //   from: EMAIL_MSG_FROM,
+//   //   to: email,
+//   //   subject: "Your Login OTP",
+//   //   htmlBody: `<p>Your OTP is <b>${otp}</b>. Valid for 5 minutes.</p>`
+//   // });
+
+//   return { status: "ok" };
+// }
+
+// ----- Verify OTP -----
+// function handleVerifyOtp(email, otp) {
+//   const ss = SpreadsheetApp.getActive();
+//   const sheet = ss.getSheetByName("Customer_Auth");
+//   const data = sheet.getDataRange().getValues();
+
+//   const enteredHash = sha256(otp);
+
+//   for (let i = 1; i < data.length; i++) {
+//     const rowEmail = data[i][2];     // Column C
+//     const storedHash = data[i][4];   // Column E
+//     const expiresAt = data[i][5];    // Column F
+
+//     if (rowEmail === email) {
+//       if (!storedHash) {
+//         return { status: "error", message: "OTP not generated" };
+//       }
+
+//       if (Date.now() > expiresAt) {
+//         return { status: "error", message: "OTP expired" };
+//       }
+
+//       if (storedHash === enteredHash) {
+//         // Clear OTP after success
+//         // sheet.getRange(i + 1, 5).clearContent(); // Column E
+//         // sheet.getRange(i + 1, 6).clearContent(); // Column F
+//         sheet.getRange(i + 1, 8).setValue(new Date()); // Column H = Last_Login_DateTime
+
+//         return { status: "ok", authenticated: true };
+//       }
+
+//       return { status: "error", message: "Invalid OTP" };
+//     }
+//   }
+
+//   return { status: "error", message: "Email not found" };
+// }
+
+// ==================== OTP Logic Ends ====================
+
+// -----------------------------------------------------------
+// Helper: Save customer insights data to "Customer_Insights" sheet
+// -----------------------------------------------------------
+// function saveCustomerInsights(customers) {
+//   const ss = SpreadsheetApp.getActiveSpreadsheet();
+//   const sheet = ss.getSheetByName("Customer_Insights");
+//   if (!sheet) throw new Error("Customer_Insights sheet not found");
+
+//   const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+
+//   const colIndex = {};
+//   headers.forEach((h, i) => {
+//     if (typeof h === "string") colIndex[h.trim()] = i;
+//   });
+
+//   const rows = customers.map(c => {
+//     const row = new Array(headers.length).fill("");
+
+//     if (colIndex["Customer_Name"] !== undefined)
+//       row[colIndex["Customer_Name"]] = c.name || "";
+
+//     if (colIndex["Dietary_Preferences"] !== undefined)
+//       row[colIndex["Dietary_Preferences"]] = c.dietary || "";
+
+//     if (colIndex["Average_Order_Value"] !== undefined)
+//       row[colIndex["Average_Order_Value"]] = c.aov || "";
+
+//     if (colIndex["Visit_Frequency_Categories"] !== undefined)
+//       row[colIndex["Visit_Frequency_Categories"]] = c.frequency || "";
+
+//     if (colIndex["Order_Attitude_Categories"] !== undefined)
+//       row[colIndex["Order_Attitude_Categories"]] = c.attitude || "";
+
+//     return row;
+//   });
+
+//   sheet.getRange(
+//     sheet.getLastRow() + 1,
+//     1,
+//     rows.length,
+//     headers.length
+//   ).setValues(rows);
+
+//   return rows.length;
+// }
+
+// -----------------------------------------------------------
+// Helper: Checks if Message Template/Timing columns exist in Campaigns sheet
+// -----------------------------------------------------------
+// function ensureCampaignColumns(count) {
+//   const ss = SpreadsheetApp.getActiveSpreadsheet();
+//   const sheet = ss.getSheetByName("Campaigns");
+//   if (!sheet) return;
+
+//   // Normalize existing headers
+//   const headerRange = sheet.getRange(1, 1, 1, sheet.getLastColumn());
+//   let headers = headerRange.getValues()[0].map(h =>
+//     typeof h === "string" ? h.toString().trim().replace(/\s+/g, " ") : ""
+//   );
+
+//   let lastCol = sheet.getLastColumn();
+
+//   for (let i = 1; i <= count; i++) {
+//     const tempHeader = `Message_Template #${i}`;
+//     const timeHeader = `Message_Send_Timing #${i}`;
+
+//     // Check case-insensitive, trimmed
+//     const tempExists = headers.some(h => h.toLowerCase() === tempHeader.toLowerCase());
+//     const timeExists = headers.some(h => h.toLowerCase() === timeHeader.toLowerCase());
+
+//     if (!tempExists) {
+//       sheet.insertColumnAfter(lastCol);
+//       lastCol++;
+//       sheet.getRange(1, lastCol).setValue(tempHeader);
+//       headers.push(tempHeader);
+//     }
+
+//     if (!timeExists) {
+//       sheet.insertColumnAfter(lastCol);
+//       lastCol++;
+//       sheet.getRange(1, lastCol).setValue(timeHeader);
+//       headers.push(timeHeader);
+//     }
+//   }
+// }
+
+// -----------------------------------------------------------
+// Helper: Save chat session to "Chats" sheet
+// -----------------------------------------------------------
+// function saveChatToSheet(session) {
+//   const ss = SpreadsheetApp.getActiveSpreadsheet();
+//   const sheet = ss.getSheetByName("Chats") || ss.insertSheet("Chats");
+  
+//   // Chat_ID	Customer_ID	Customer_Name	Customer_Phone	Customer_Email	Chat_Date_Time	Chat_Session_Text
+  
+//   // Add headers if empty
+//   if (sheet.getLastRow() === 0) {
+//     sheet.appendRow([
+//       'Chat_ID',
+//       'Customer_ID',
+//       'Customer_Name',
+//       'Customer_Phone',
+//       'Customer_Email',
+//       'Chat_Date_Time',
+//       'Chat_Session_Text'
+//     ]);
+//   }
+
+//   sheet.appendRow([
+//     session.chatId || '',
+//     session.clientId || '',
+//     session.clientName || '',
+//     session.clientPhone || '',
+//     session.clientEmail || '',
+//     session.date || new Date(),
+//     session.transcriptText || ''
+//   ]);
+// }
+
+// -----------------------------------------------------------
+// Helper: Save campaign data to "Campaigns" sheet
+// -----------------------------------------------------------
+// function saveCampaignToSheet(data) {
+//   const ss = SpreadsheetApp.getActiveSpreadsheet();
+//   const sheet = ss.getSheetByName("Campaigns");
+//   if (!sheet) throw new Error("Campaigns sheet not found");
+
+//   let count = Number(data.campaignMessageCount) || 0;
+//   if (count > 10) count = 10;
+
+//   ensureCampaignColumns(count);
+
+//   // Read headers
+//   let headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+//   headers = headers.map(h => (typeof h === 'string' ? h.trim() : h));
+
+//   const row = new Array(headers.length).fill("");
+
+//   const fieldMap = {
+//     "Campaign_Text": "campaignText",
+//     "Target_Customer_Category": "targetCustomerCategory",
+//     "Campaign_Start_DateTime": "startDateTime",
+//     "Campaign_End_DateTime": "endDateTime",
+//     "Campaign_Message_Count": "campaignMessageCount",
+//     "Campaign_Type" : "campaignType",
+//     "Campaign_Status": "campaignStatus"
+//   };
+
+//   // Fill base fields
+//   headers.forEach((header, idx) => {
+//     if (data[header] !== undefined) {
+//       row[idx] = data[header];
+//       return;
+//     }
+//     const fk = fieldMap[header];
+//     if (fk && data[fk] !== undefined) {
+//       row[idx] = data[fk];
+//     }
+//   });
+
+//   // Fill message templates & timings
+//   for (let i = 1; i <= count; i++) {
+//     const templateKeyFrontend = `messageTemplate${i}`;
+//     const timingKeyFrontend = `messageSendTiming${i}`;
+
+//     const templateHeader = `Message Template #${i}`;
+//     const timingHeader = `Message Send Timing #${i}`;
+
+//     const templateCol = headers.indexOf(templateHeader);
+//     const timingCol = headers.indexOf(timingHeader);
+
+//     if (templateCol !== -1) {
+//       if (data[templateKeyFrontend] !== undefined) {
+//         row[templateCol] = data[templateKeyFrontend];
+//       } else if (data[templateHeader] !== undefined) {
+//         row[templateCol] = data[templateHeader];
+//       }
+//     }
+
+//     if (timingCol !== -1) {
+//       if (data[timingKeyFrontend] !== undefined) {
+//         row[timingCol] = data[timingKeyFrontend];
+//       } else if (data[timingHeader] !== undefined) {
+//         row[timingCol] = data[timingHeader];
+//       }
+//     }
+//   }
+
+//   sheet.appendRow(row);
+// }
+
+/* ============================================================
+   WEB APP ENTRY POINTS
+============================================================ */
+
+/**
+ * Web App entry point for GET requests.
+ * This executes the campaign check logic and returns a simple confirmation page.
+ *
+ * @param {GoogleAppsScript.Events.DoGet} e Event object from the Web App request.
+ * @returns {GoogleAppsScript.Content.HtmlOutput} Simple HTML confirmation page.
+ */
+function doGet(e) {
+    Logger.log('Web App accessed. Starting campaign runner...');
+
+    // Execute the core logic
+    const statusMessage = main_campaign_runner();
+
+    // Create and return the HTML response
+    const html = HtmlService.createHtmlOutput(
+        '<!DOCTYPE html><html><head>' +
+        '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+        '<style>' +
+        'body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; text-align: center; padding: 40px; background-color: #f7f7f7; color: #333; }' +
+        'h1 { color: #10B981; margin-bottom: 20px; }' +
+        'p { font-size: 1.1em; line-height: 1.6; }' +
+        'a { color: #10B981; text-decoration: none; font-weight: 600; }' +
+        '</style>' +
+        '</head><body>' +
+        '<h1>Campaign Scheduler Status</h1>' +
+        `<p style="font-weight: bold; padding: 10px; background-color: #E6F8F2; border-radius: 8px;">${statusMessage}</p>` +
+        '<p>The campaign scheduling check has been performed for the current time.</p>' +
+        '<p>For detailed execution results and logging, please check the ' +
+        '<a href="https://script.google.com/home/projects" target="_blank">Google Apps Script Logs</a>.</p>' +
+        '</body></html>'
+    ).setSandboxMode(HtmlService.SandboxMode.IFRAME);
+
+    return html;
+}
+
+/**
+ * Web app endpoint for React frontend to add new Campaigns
+ */
+// function doPost(e) {
+//   try {
+//     // ----------------------------------------------
+//     // [0] Validate POST data
+//     // ----------------------------------------------
+//     if (!e || !e.postData || !e.postData.contents) {
+//       return jsonResponse({ status: "error", message: "No POST data received" });
+//     }
+
+//     let data = {};
+//     try {
+//       if (e.postData.type === "application/json") {
+//         data = JSON.parse(e.postData.contents);
+//       } else {
+//         data = JSON.parse(e.postData.contents || '{}');
+//       }
+//     } catch (err) {
+//       return jsonResponse({ status: "error", message: "Invalid JSON: " + err.message });
+//     }
+
+    // ----------------------------------------------
+    // [1] Handle auth actions
+    // ----------------------------------------------
+    // if (data.action === "send_otp" && data.email) {
+    //   return jsonResponse(handleSendOtp(data.name, data.mobile, data.email));
+    // }
+
+    // if (data.action === "verify_otp" && data.email && data.otp) {
+    //   return jsonResponse(handleVerifyOtp(data.email, data.otp));
+    // }
+
+    // ----------------------------------------------
+    // [2] Preference Screen after Signup
+    // ----------------------------------------------
+    // doPost ke andar jahan check_user ya verify_otp khatam ho raha hai:
+    // if (data.action === "save_preferences") {
+    //   var ss = SpreadsheetApp.getActiveSpreadsheet();
+    //   var prefSheet = ss.getSheetByName("Customer_Preferences") || ss.insertSheet("Customer_Preferences");
+  
+    //   // Agar sheet nayi hai toh headers add karein
+    //   if (prefSheet.getLastRow() === 0) {
+    //     prefSheet.appendRow(["Email", "Q1", "Q2", "Q3", "Q4", "Q5", "Q6", "Q7", "Q8", "Q9", "Q10", "Timestamp"]);
+    //   }
+
+    //   // User ke answers array banayein
+    //   var rowData = [
+    //     data.email,            // Column A
+    //     data.preferences[1],   // Column B (Meal Type)
+    //     data.preferences[2],   // Column C (Beverages)
+    //     data.preferences[3],   // Column D (Dessert)
+    //     data.preferences[4],   // Column E (Comfort Food)
+    //     data.preferences[5],   // Column F (Late-night)
+    //     data.preferences[6],   // Column G (Diet Plan)
+    //     data.preferences[7],   // Column H (Recommendations)
+    //     data.preferences[8],   // Column I (Roti)
+    //     data.preferences[9],   // Column J (Spice Level)
+    //     data.preferences[10],  // Column K (Delivery)
+    //     new Date()             // Column L (Timestamp)
+    //   ];
+
+    //   prefSheet.appendRow(rowData);
+    //   return jsonResponse({ "status": "ok" });
+    // }
+
+    // ----------------------------------------------
+    // [3] Handle user existence check (Login Logic)
+    // ----------------------------------------------
+    // if (data.action === "check_user") {
+
+    //   const sheet = SpreadsheetApp
+    //     .getActiveSpreadsheet()
+    //     .getSheetByName("Customer_Auth");
+
+    //   const rows = sheet.getDataRange().getValues();
+
+    //   const value  = data.value;   // email OR phone
+    //   const method = data.method;  // 'email' OR 'phone'
+
+    //   let foundUser = null;
+
+    //   for (let i = 1; i < rows.length; i++) {
+
+    //     const name   = rows[i][1]; // Col B
+    //     const email  = rows[i][2]; // Col C
+    //     const phone  = rows[i][3]?.toString().trim(); // Col D
+    //     const input  = value.toString().trim();
+
+    //     // 🔹 Email login → check ONLY email
+    //     if (method === "email" && email === input) {
+    //       foundUser = {
+    //         name: name,
+    //         email: email,
+    //         mobile: phone
+    //       };
+    //       break;
+    //     }
+
+    //     // 🔹 Phone login → check ONLY phone
+    //     if (method === "phone" && phone === input) {
+    //       foundUser = {
+    //         name: name,
+    //         email: email,
+    //         mobile: phone
+    //       };
+    //       break;
+    //     }
+    //   }
+
+    //   // ❌ User not found
+    //   if (!foundUser) {
+    //     return jsonResponse({ status: "not_found" });
+    //   }
+
+    //   // ✅ EMAIL LOGIN → SEND OTP
+    //   if (method === "email") {
+    //     handleSendOtp(
+    //       foundUser.name,
+    //       foundUser.mobile,
+    //       foundUser.email
+    //     );
+
+    //     return jsonResponse({
+    //       "status": "exists",
+    //       "name": foundUser.name,
+    //       "mobile": foundUser.mobile,
+    //       "message": "OTP sent to email"
+    //     });
+    //   }
+
+    //   // ✅ PHONE LOGIN → NO OTP
+    //   return jsonResponse({
+    //     "status": "exists",
+    //     "name": foundUser.name,
+    //     "mobile": foundUser.mobile,
+    //     "message": "OTP not sent to mobile"
+    //   });
+    // }
+
+    // ----------------------------------------------
+    // [4] Customer Activity Logging
+    // ----------------------------------------------
+    // doPost function ke andar check_user ya save_preferences ke baad ise add karein
+    // if (data.action === "save_app_log") {
+    //   try {
+    //     var ss = SpreadsheetApp.getActiveSpreadsheet();
+    //     // Sheet ko dhoondna ya nayi banana agar exist nahi karti
+    //     var logSheet = ss.getSheetByName("App_Logs") || ss.insertSheet("App_Logs");
+      
+    //     // Headers set karna agar sheet ekdum nayi hai
+    //     if (logSheet.getLastRow() === 0) {
+    //       logSheet.appendRow(["Timestamp", "User_Email", "Action", "Details"]);
+    //     }
+
+    //     // Row append karna: [Waqt, User, Kaam, Details]
+    //     logSheet.appendRow([
+    //       new Date(),       // Column A
+    //       data.email,      // Column B
+    //       data.activity,   // Column C
+    //       data.details     // Column D
+    //     ]);
+      
+    //     return jsonResponse({ "status": "ok", "message": "Log saved" });
+    //   } catch (err) {
+    //     return jsonResponse({ "status": "error", "message": err.toString() });
+    //   }
+    // }
+
+    // ----------------------------------------------
+    // [5] Handle chat sessions
+    // ----------------------------------------------
+    // if (data.clientId && data.chatId && data.transcriptText) {
+    //   saveChatToSheet(data);
+    //   return jsonResponse({ status: "ok", message: "Chat session saved" });
+    // }
+
+    // ----------------------------------------------
+    // [7] Handle campaigns
+    // ----------------------------------------------
+    // saveCampaignToSheet(data);
+    // return jsonResponse({ status: "success", message: "Campaign saved" });
+
+//   } catch (err) {
+//     // ----------------------------------------------
+//     // 4️⃣ Global catch — always JSON
+//     // ----------------------------------------------
+//     return jsonResponse({ status: "error", message: err.message });
+//   }
+// }
+
+/* ============================================================
+   JSON RESPONSE HELPER
+============================================================ */
+// function jsonResponse(obj) {
+//   return ContentService.createTextOutput(JSON.stringify(obj))
+//     .setMimeType(ContentService.MimeType.JSON);
+// }
+
+
+
+

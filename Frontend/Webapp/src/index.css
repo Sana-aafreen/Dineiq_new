@@ -1,0 +1,249 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* --- ZOMATO COLOR SYSTEM --- */
+
+    /* Background: Thoda Gray taaki cards pop karein */
+    --background: 0 0% 95%;
+    /* #f2f2f2 */
+    --foreground: 0 0% 10%;
+
+    /* Cards: Pure White */
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 10%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 10%;
+
+    /* Zomato Red */
+    --primary: 355 78% 56%;
+    /* #E23744 */
+    --primary-foreground: 0 0% 100%;
+
+    /* Secondary Elements */
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 15%;
+
+    --muted: 0 0% 94%;
+    --muted-foreground: 0 0% 45%;
+
+    --accent: 0 0% 96%;
+    --accent-foreground: 0 0% 15%;
+
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 355 78% 56%;
+
+    --radius: 1rem;
+    /* 16px for modern rounded look */
+
+    /* Custom Tokens */
+    --gold: 40 92% 55%;
+    --gold-foreground: 0 0% 10%;
+    --veg-green: 142 76% 36%;
+    --non-veg-red: 0 72% 51%;
+    --cart-dark: 0 0% 12%;
+    --rating-star: 45 93% 47%;
+
+    /* Gradients */
+    --gradient-gold: linear-gradient(135deg, hsl(43 96% 56%) 0%, hsl(36 100% 50%) 100%);
+    --gradient-primary: linear-gradient(135deg, hsl(355 78% 56%) 0%, hsl(340 75% 50%) 100%);
+    --gradient-dark: linear-gradient(135deg, hsl(0 0% 15%) 0%, hsl(0 0% 8%) 100%);
+
+    /* Soft Shadows */
+    --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.05), 0 1px 2px rgba(0, 0, 0, 0.06);
+    --shadow-elevated: 0 8px 20px rgba(0,0,0,0.15);
+    --shadow-button: 0 4px 12px -2px rgba(226, 55, 68, 0.35);
+
+    --background: 30 20% 98%;
+    --foreground: 215 25% 20%;
+  }
+
+  .dark {
+    --background: 0 0% 6%;
+    --foreground: 0 0% 95%;
+    --card: 0 0% 10%;
+    --card-foreground: 0 0% 95%;
+    --popover: 0 0% 10%;
+    --popover-foreground: 0 0% 95%;
+    --primary: 355 78% 56%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 0 0% 15%;
+    --secondary-foreground: 0 0% 90%;
+    --muted: 0 0% 18%;
+    --muted-foreground: 0 0% 60%;
+    --accent: 0 0% 18%;
+    --accent-foreground: 0 0% 90%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 0 0% 20%;
+    --input: 0 0% 20%;
+    --ring: 355 78% 56%;
+
+    --sidebar-background: 240 5.9% 10%;
+    --sidebar-foreground: 240 4.8% 95.9%;
+    --sidebar-primary: 224.3 76.3% 48%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 240 3.7% 15.9%;
+    --sidebar-accent-foreground: 240 4.8% 95.9%;
+    --sidebar-border: 240 3.7% 15.9%;
+    --sidebar-ring: 217.2 91.2% 59.8%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  html {
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    /* Isse text thoda compact (Zomato style) lagega */
+    letter-spacing: -0.015em;
+  }
+
+  /* Image fit fix */
+  img {
+    @apply object-cover;
+  }
+}
+
+@layer components {
+
+  /* Buttons */
+  .btn-primary {
+    @apply bg-primary text-primary-foreground font-bold rounded-xl px-6 py-3 transition-transform active:scale-95;
+    box-shadow: var(--shadow-button);
+  }
+
+  /* Dish Card - Updated for Dense Look */
+  .card-dish {
+    @apply bg-white rounded-2xl border border-gray-100 p-3 relative overflow-hidden;
+    box-shadow: var(--shadow-card);
+  }
+
+  /* Badges */
+  .badge-gold {
+    background: var(--gradient-gold);
+    @apply text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-md shadow-sm;
+    color: hsl(var(--gold-foreground));
+  }
+
+  .badge-veg {
+    @apply w-4 h-4 border-[2px] rounded-sm flex items-center justify-center bg-white;
+    border-color: hsl(var(--veg-green));
+  }
+
+  .badge-veg::before {
+    content: '';
+    @apply w-2 h-2 rounded-full;
+    background-color: hsl(var(--veg-green));
+  }
+
+  .badge-nonveg {
+    @apply w-4 h-4 border-[2px] rounded-sm flex items-center justify-center bg-white;
+    border-color: hsl(var(--non-veg-red));
+  }
+
+  .badge-nonveg::before {
+    content: '';
+    @apply w-0 h-0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-bottom: 7px solid hsl(var(--non-veg-red));
+  }
+
+  .floating-button {
+    @apply fixed z-50 rounded-full flex items-center justify-center cursor-pointer transition-transform hover:scale-105 active:scale-95;
+    box-shadow: var(--shadow-elevated);
+  }
+
+  .cart-bar {
+  background: var(--gradient-dark);
+  @apply fixed bottom-4 left-4 right-4 z-40 text-white rounded-xl flex items-center justify-between px-4 py-3;
+  box-shadow: 0 10px 25px -5px rgba(0,0,0,0.3);
+}
+}
+
+@layer utilities {
+  .text-gold {
+    color: hsl(var(--gold));
+  }
+
+  .bg-gold {
+    background-color: hsl(var(--gold));
+  }
+
+  .text-veg {
+    color: hsl(var(--veg-green));
+  }
+
+  .text-rating {
+    color: hsl(var(--rating-star));
+  }
+
+  .gradient-gold {
+    background: var(--gradient-gold);
+  }
+
+  .gradient-primary {
+    background: var(--gradient-primary);
+  }
+
+  .gradient-dark {
+    background: var(--gradient-dark);
+  }
+
+  .hide-scrollbar {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .hide-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  .safe-bottom {
+    padding-bottom: env(safe-area-inset-bottom, 20px);
+  }
+}
+
+/* Final Force Override to ensure font applies everywhere */
+@layer base {
+
+  body,
+  button,
+  input,
+  textarea {
+    font-family: 'Plus Jakarta Sans', sans-serif !important;
+  }
+
+  @keyframes slide-up {
+  from {
+    transform: translateY(60px);
+    opacity: 0;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.35s ease;
+}
+}
