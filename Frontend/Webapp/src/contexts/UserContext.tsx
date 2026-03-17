@@ -148,11 +148,12 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [orders, setOrders] = useState<Order[]>([]);
 
   const fetchOrders = async () => {
-    if (isLoggedIn && profile.email) {
-      const data = await api.fetchOrderHistory(profile.email);
-      if (data && data.orders) {
-        setOrders(data.orders);
-      }
+    // ✅ Guard: skip fetch for unauthenticated or guest users
+    if (!isLoggedIn || !profile.email || profile.email === "guest@dineiq.com") return;
+
+    const data = await api.fetchOrderHistory(profile.email);
+    if (data && data.orders) {
+      setOrders(data.orders);
     }
   };
 
@@ -165,9 +166,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
   };
 
   const login = (table: string, count: number, name?: string, phone?: string, email: string = "", id: string = "") => {
-  setTableNumber(table);
-  localStorage.setItem("dineiq_table_number", table);  // ← add this line
-  setGuestCount(count);
+    setTableNumber(table);
+    localStorage.setItem("dineiq_table_number", table);
+    setGuestCount(count);
     const newProfile = {
       id: id,
       name: name || "Guest",

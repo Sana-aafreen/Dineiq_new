@@ -14,8 +14,6 @@ export const api = {
                 })
             });
             const data = await response.json();
-            // Backend returns { "menu": { "status": "success", ... } }
-            // We need to unwrap it for the frontend to access "status" directly
             return data.menu || data;
         } catch (error) {
             console.error("Fetch Menu Error:", error);
@@ -114,6 +112,10 @@ export const api = {
     },
 
     async fetchOrderHistory(email: string) {
+        // ✅ Never call backend for empty or guest email — prevents Workbox error
+        if (!email || email === "guest@dineiq.com") {
+            return { orders: [] };
+        }
         try {
             const res = await fetch(`${API_BASE_URL}/order-history/${email}`);
             return await res.json();
@@ -162,62 +164,63 @@ export const api = {
     },
 
     // AUTH APIs
-signup: async(name: string, email: string, mobile: string, tableNumber?: number) => {
-    const res = await fetch(`${API_BASE_URL}/auth/signup`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            name,
-            email,
-            mobile,
-            table_number: tableNumber
-        })
-    });
-    return await res.json();
-},
+    signup: async (name: string, email: string, mobile: string, tableNumber?: number) => {
+        const res = await fetch(`${API_BASE_URL}/auth/signup`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                name,
+                email,
+                mobile,
+                table_number: tableNumber
+            })
+        });
+        return await res.json();
+    },
 
-async checkUser(method: string, value: string, tableNumber?: number) {
-    const res = await fetch(`${API_BASE_URL}/auth/check-user`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-            method,
-            value,
-            table_number: tableNumber
-        })
-    });
-    return await res.json();
-},
+    async checkUser(method: string, value: string, tableNumber?: number) {
+        const res = await fetch(`${API_BASE_URL}/auth/check-user`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+                method,
+                value,
+                table_number: tableNumber
+            })
+        });
+        return await res.json();
+    },
 
-async verifyOtp(email: string, otp: string) {
-    const res = await fetch(`${API_BASE_URL}/auth/verify-otp`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, otp })
-    });
-    return await res.json();
-},
-callWaiter: async (tableNumber: number, customerName: string) => {
-  try {
-    const res = await fetch(`${API_BASE_URL}/call-waiter`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ table_number: tableNumber, customer_name: customerName }),
-    });
-    return await res.json();
-  } catch (e) {
-    console.warn("callWaiter failed:", e);
-    return null;
-  }
-},
+    async verifyOtp(email: string, otp: string) {
+        const res = await fetch(`${API_BASE_URL}/auth/verify-otp`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, otp })
+        });
+        return await res.json();
+    },
 
-fetchActiveOrder: async (tableNumber: number) => {
-  try {
-    const res = await fetch(`${API_BASE_URL}/active-order/${tableNumber}`);
-    return await res.json();
-  } catch (e) {
-    console.warn("fetchActiveOrder failed:", e);
-    return null;
-  }
-},
+    callWaiter: async (tableNumber: number, customerName: string) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/call-waiter`, {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ table_number: tableNumber, customer_name: customerName }),
+            });
+            return await res.json();
+        } catch (e) {
+            console.warn("callWaiter failed:", e);
+            return null;
+        }
+    },
+
+    fetchActiveOrder: async (tableNumber: number) => {
+        try {
+            const res = await fetch(`${API_BASE_URL}/active-order/${tableNumber}`);
+            return await res.json();
+        } catch (e) {
+            console.warn("fetchActiveOrder failed:", e);
+            return null;
+        }
+    },
 };

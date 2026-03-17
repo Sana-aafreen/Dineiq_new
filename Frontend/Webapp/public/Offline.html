@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>DineIQ - Offline</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Poppins', sans-serif;
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+      color: white;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 2rem;
+    }
+    .emoji { font-size: 5rem; margin-bottom: 1.5rem; animation: bounce 2s infinite; }
+    @keyframes bounce {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
+    }
+    h1 { font-size: 2rem; font-weight: 700; color: #f97316; margin-bottom: 0.5rem; }
+    p { color: #9ca3af; margin-bottom: 0.5rem; font-size: 0.95rem; }
+    .card {
+      margin-top: 2rem;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(249,115,22,0.2);
+      border-radius: 1rem;
+      padding: 1.5rem 2rem;
+      max-width: 320px;
+      width: 100%;
+    }
+    .card p { color: #d1d5db; font-size: 0.875rem; text-align: left; margin-bottom: 0.5rem; }
+    .card p::before { content: "✅ "; }
+    .retry-btn {
+      margin-top: 2rem;
+      background: linear-gradient(135deg, #f97316, #ef4444);
+      color: white;
+      border: none;
+      padding: 0.875rem 2.5rem;
+      border-radius: 9999px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 20px rgba(249,115,22,0.4);
+    }
+  </style>
+</head>
+<body>
+  <div class="emoji">🍽️</div>
+  <h1>DineIQ</h1>
+  <p>You're offline right now.</p>
+  <p>Please check your connection.</p>
+
+  <div class="card">
+    <p>Previously viewed menu</p>
+    <p>Your cart is saved</p>
+    <p>Order history available</p>
+  </div>
+
+  <button class="retry-btn" onclick="window.location.reload()">
+    Try Again
+  </button>
+</body>
+</html>

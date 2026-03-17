@@ -29,7 +29,7 @@ app = FastAPI(title="DineIQ Backend API", version="2.0")
 
 # CORS Configuration
 # Allow both production (Vercel) and development (localhost) origins
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:8080,http://localhost:8081").split(",")
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000,http://localhost:8080,http://localhost:8081,http://localhost:4173").split(",")
 print("🚀 ALLOWED_ORIGINS LOADED:", allowed_origins)
 app.add_middleware(
     CORSMiddleware,

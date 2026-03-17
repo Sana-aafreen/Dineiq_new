@@ -5,7 +5,7 @@ import { useCart } from "@/contexts/CartContext";
 import OfferCarousel from "@/components/OfferCarousel";
 import AIButton from "@/components/AIButton";
 import { saveLog } from "@/utils/logger";
-import { api } from "@/api";
+import { offlineApi as api } from "@/utils/offlineApi";
 import { MenuItem, Category } from "@/lib/data";
 import { extractDynamicCategories, getMenuItemImage } from "@/lib/categoryUtils";
 import {

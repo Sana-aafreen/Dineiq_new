@@ -17,7 +17,11 @@ import Payment from "@/pages/Payment";
 import PreferenceScreen from "@/pages/PreferenceScreen";
 import ChatbotPage from "@/pages/ChatbotPage";
 import ReviewPage from "@/pages/ReviewPage";
-import AIButton from "@/components/AIButton"; // <-- Added AIButton
+import AIButton from "@/components/AIButton";
+
+// ─── PWA Components ───
+import OfflineBanner from "@/components/Offlinebanner";
+import InstallPrompt from "@/components/InstallPrompt";
 
 const queryClient = new QueryClient();
 
@@ -28,6 +32,10 @@ const App = () => (
         <CartProvider>
           <Toaster />
           <Sonner />
+
+          {/* PWA: Shows "You're offline" / "Back online" banner */}
+          <OfflineBanner />
+
           <BrowserRouter>
             {/* Floating AI Button (accessible on all pages) */}
             <AIButton />
@@ -46,6 +54,9 @@ const App = () => (
               <Route path="/review" element={<ReviewPage />} />
               <Route path="*" element={<NotFound />} />
             </Routes>
+
+            {/* PWA: "Add to Home Screen" install prompt */}
+            <InstallPrompt />
           </BrowserRouter>
 
         </CartProvider>
