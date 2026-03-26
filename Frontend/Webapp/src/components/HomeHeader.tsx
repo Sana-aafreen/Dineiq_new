@@ -9,6 +9,8 @@ import { useState, useRef, useCallback } from "react";
 interface HomeHeaderProps {
   onSearch?: (query: string) => void;
   searchQuery?: string;
+  offlineMediaStatus?: string | null;
+  offlineMediaReady?: boolean;
 }
 
 const useVoiceSearch = (onResult: (text: string) => void) => {
@@ -18,22 +20,25 @@ const useVoiceSearch = (onResult: (text: string) => void) => {
   const toggle = useCallback(() => {
     const SpeechRecognition =
       (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
     if (!SpeechRecognition) {
       alert("Voice search not supported in this browser.");
       return;
     }
+
     if (listening) {
       recRef.current?.stop();
       setListening(false);
       return;
     }
+
     const rec = new SpeechRecognition();
     recRef.current = rec;
     rec.lang = "en-US";
     rec.interimResults = false;
     rec.onresult = (e: any) => {
-      const txt = e.results[0][0].transcript;
-      onResult(txt);
+      const text = e.results[0][0].transcript;
+      onResult(text);
       setListening(false);
     };
     rec.onerror = () => setListening(false);
@@ -45,54 +50,55 @@ const useVoiceSearch = (onResult: (text: string) => void) => {
   return { listening, toggle };
 };
 
-export default function HomeHeader({ onSearch, searchQuery = "" }: HomeHeaderProps) {
-  // 'tableNumber' को context से निकाला
+export default function HomeHeader({
+  onSearch,
+  searchQuery = "",
+  offlineMediaStatus = null,
+  offlineMediaReady = false,
+}: HomeHeaderProps) {
   const { guestName, isVegMode, toggleVegMode, tableNumber } = useUser();
   const { totalItems } = useCart();
   const navigate = useNavigate();
 
   const handleVoiceResult = (text: string) => {
-    console.log("🎤 Voice Result:", text);
+    console.log("Voice Result:", text);
     onSearch?.(text);
   };
 
   const { listening, toggle } = useVoiceSearch(handleVoiceResult);
+  const displayName = guestName || "Guest";
 
   return (
-    <header className="bg-white sticky top-0 z-40 pb-3 transition-all shadow-[0_4px_20px_-4px_rgba(0,0,0,0.08)]">
-
-      {/* Top row */}
-      <div className="flex items-center justify-between px-4 pt-4 pb-3">
-        <div className="flex items-center gap-3">
-
-          <div className="flex items-center gap-2.5">
-            {/* User Avatar Initials / Sidebar Menu */}
+    <header className="sticky top-0 z-50 border-b border-gray-100/80 bg-white/95 pb-3 shadow-[0_4px_20px_-4px_rgba(0,0,0,0.08)] backdrop-blur transition-all">
+      <div className="flex flex-col gap-3 px-4 pt-4 pb-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 items-center gap-2.5">
             <SidebarMenu>
-              <button
-                className="w-[38px] h-[38px] rounded-xl bg-gradient-to-br from-[#E23744] to-[#C0303C] border-2 border-[#FDDCDE] shadow-[0_2px_8px_rgba(226,55,68,0.3)] flex items-center justify-center text-white text-sm font-black shrink-0 transition-transform active:scale-95"
-              >
-                {(!guestName || guestName.toLowerCase() === "guest")
-                  ? <User className="w-[18px] h-[18px] text-white" />
-                  : guestName.slice(0, 2).toUpperCase()}
+              <button className="flex h-[38px] w-[38px] shrink-0 items-center justify-center rounded-xl border-2 border-[#FDDCDE] bg-gradient-to-br from-[#E23744] to-[#C0303C] text-sm font-black text-white shadow-[0_2px_8px_rgba(226,55,68,0.3)] transition-transform active:scale-95">
+                {!guestName || guestName.toLowerCase() === "guest" ? (
+                  <User className="h-[18px] w-[18px] text-white" />
+                ) : (
+                  guestName.slice(0, 2).toUpperCase()
+                )}
               </button>
             </SidebarMenu>
 
-            <div className="flex flex-col">
-              <h1 className="text-base font-extrabold text-gray-900 tracking-tight leading-none mb-1">
-                Hi, {guestName || "Guest"} 👋
+            <div className="flex min-w-0 flex-col">
+              <h1 className="mb-1 truncate text-sm font-extrabold leading-none tracking-tight text-gray-900 sm:text-base">
+                Hi, {displayName}
               </h1>
 
-              <div className="flex items-center gap-1.5 text-[11px] font-semibold text-gray-500 tracking-wide">
+              <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-semibold tracking-wide text-gray-500">
                 <MapPin size={10} className="text-[#E23744]" fill="currentColor" />
                 {tableNumber ? (
                   <>
-                    <span className="text-[#E23744] font-bold">Table {tableNumber}</span>
-                    <span>· Harvest & Ember</span>
+                    <span className="font-bold text-[#E23744]">Table {tableNumber}</span>
+                    <span>Harvest & Ember</span>
                   </>
                 ) : (
                   <>
-                    <span className="text-[#E23744] font-bold">Dine In</span>
-                    <span>· Harvest & Ember</span>
+                    <span className="font-bold text-[#E23744]">Dine In</span>
+                    <span>Harvest & Ember</span>
                   </>
                 )}
               </div>
@@ -100,77 +106,94 @@ export default function HomeHeader({ onSearch, searchQuery = "" }: HomeHeaderPro
           </div>
         </div>
 
-        {/* Right Side Actions - Review, Cart, Veg Mode & Notifications */}
-        <div className="flex items-center gap-2">
-          {/* Review Button */}
+        <div className="grid grid-cols-[minmax(0,1fr)_auto_auto_auto] items-center gap-2 sm:flex sm:items-center">
           <button
             onClick={() => navigate("/review")}
-            className="px-3 h-10 rounded-xl bg-orange-50 border border-orange-100 flex items-center gap-1.5 transition-all active:scale-95 shadow-sm"
-            title="You Opinion about us"
+            className="flex h-10 min-w-0 items-center justify-center gap-1.5 rounded-xl border border-orange-100 bg-orange-50 px-3 shadow-sm transition-all active:scale-95"
+            title="Share feedback"
           >
-            <Star className="w-4 h-4 text-orange-500" fill="currentColor" />
-            <span className="text-[10px] font-black text-orange-700 uppercase tracking-tight whitespace-nowrap">Rate Us/Complain</span>
+            <Star className="h-4 w-4 text-orange-500" fill="currentColor" />
+            <span className="truncate text-[10px] font-black uppercase tracking-tight text-orange-700">
+              Rate Us
+            </span>
           </button>
 
-          {/* Cart Icon */}
           <button
             onClick={() => navigate("/cart")}
-            className="relative w-10 h-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center transition-all active:scale-95"
-            title="View Your Cart"
+            className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-gray-100 bg-gray-50 transition-all active:scale-95"
+            title="View your cart"
           >
-            <ShoppingBag className="w-5 h-5 text-gray-700" />
+            <ShoppingBag className="h-5 w-5 text-gray-700" />
             {totalItems > 0 && (
-              <span className="absolute -top-1 -right-1 bg-[#E23744] text-white text-[10px] font-bold w-4 h-4 rounded-full flex items-center justify-center border-2 border-white">
+              <span className="absolute -right-1 -top-1 flex h-4 w-4 items-center justify-center rounded-full border-2 border-white bg-[#E23744] text-[10px] font-bold text-white">
                 {totalItems}
               </span>
             )}
           </button>
 
-          {/* Veg Mode Toggle (Filter) */}
-          <div className="bg-gray-50 border border-gray-100 px-3 py-1.5 rounded-full flex flex-col items-center justify-center">
-            <span className="text-[8px] font-bold text-gray-400 uppercase tracking-wider leading-none mb-1">VEG</span>
+          <div className="flex flex-col items-center justify-center rounded-full border border-gray-100 bg-gray-50 px-3 py-1.5">
+            <span className="mb-1 text-[8px] font-bold uppercase leading-none tracking-wider text-gray-400">
+              VEG
+            </span>
             <Switch
               checked={isVegMode}
               onCheckedChange={toggleVegMode}
-              className="h-4 w-7 data-[state=checked]:bg-green-600 border-none shadow-sm"
+              className="h-4 w-7 border-none shadow-sm data-[state=checked]:bg-green-600"
             />
           </div>
 
-          {/* Notification Bell */}
           <button
-            className="w-10 h-10 rounded-xl bg-gray-50 border border-gray-100 flex items-center justify-center transition-all active:scale-95 shadow-sm"
+            className="flex h-10 w-10 items-center justify-center rounded-xl border border-gray-100 bg-gray-50 shadow-sm transition-all active:scale-95"
             title="Notifications"
           >
-            <Bell className="w-5 h-5 text-gray-700" />
+            <Bell className="h-5 w-5 text-gray-700" />
           </button>
         </div>
       </div>
 
-      {/* Search row */}
       <div className="px-4">
-        <div className="relative flex items-center bg-gray-50 border-[1.5px] border-gray-100 rounded-xl transition-all focus-within:border-[#E23744] focus-within:ring-4 focus-within:ring-[#E23744]/10 h-[42px]">
-          <Search className="absolute left-3 w-[15px] h-[15px] text-gray-400" strokeWidth={2.5} />
+        <div className="relative flex h-[44px] items-center rounded-xl border-[1.5px] border-gray-100 bg-gray-50 transition-all focus-within:border-[#E23744] focus-within:ring-4 focus-within:ring-[#E23744]/10">
+          <Search className="absolute left-3 h-[15px] w-[15px] text-gray-400" strokeWidth={2.5} />
           <input
             type="text"
             value={searchQuery}
-            placeholder="Search for dishes, cuisines…"
-            onChange={(e) => {
-              console.log("⌨️ Input Change:", e.target.value);
-              onSearch?.(e.target.value);
-            }}
-            className="w-full h-full pl-[36px] pr-12 bg-transparent border-none text-[13px] font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0"
+            placeholder="Search for dishes or cuisines"
+            onChange={(e) => onSearch?.(e.target.value)}
+            className="h-full w-full border-none bg-transparent pl-[36px] pr-12 text-[13px] font-medium text-gray-900 placeholder:text-gray-400 focus:outline-none focus:ring-0"
           />
           <button
             onClick={toggle}
-            className={`absolute right-1 w-9 h-9 rounded-lg flex items-center justify-center transition-all border-none cursor-pointer ${listening ? 'bg-[#E23744] animate-pulse' : 'bg-transparent hover:bg-gray-200'}`}
+            className={`absolute right-1 flex h-9 w-9 items-center justify-center rounded-lg border-none transition-all ${
+              listening ? "animate-pulse bg-[#E23744]" : "bg-transparent hover:bg-gray-200"
+            }`}
           >
-            {listening
-              ? <MicOff className="w-4 h-4 text-white" />
-              : <Mic className="w-4 h-4 text-gray-600" />
-            }
+            {listening ? (
+              <MicOff className="h-4 w-4 text-white" />
+            ) : (
+              <Mic className="h-4 w-4 text-gray-600" />
+            )}
           </button>
         </div>
       </div>
+
+      {offlineMediaStatus && (
+        <div className="px-4 pt-2">
+          <div
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[11px] font-bold ${
+              offlineMediaReady
+                ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                : "border-amber-200 bg-amber-50 text-amber-700"
+            }`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                offlineMediaReady ? "bg-emerald-500" : "animate-pulse bg-amber-500"
+              }`}
+            />
+            <span>{offlineMediaStatus}</span>
+          </div>
+        </div>
+      )}
     </header>
   );
 }

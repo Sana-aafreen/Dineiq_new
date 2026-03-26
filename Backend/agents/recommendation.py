@@ -1,6 +1,7 @@
 import os
 import traceback
 import pandas as pd
+import math
 from typing import List, Dict, Optional
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -135,21 +136,36 @@ class RecommendationAgent:
              # Randomize a bit to keep it fresh
              upsell_items = upsell_df.sample(min(len(upsell_df), 10)).head(5) if not upsell_df.empty else upsell_df
 
+             def _safe_price(value) -> float:
+                 try:
+                     price = float(str(value).replace(',', ''))
+                     return price if math.isfinite(price) else 0.0
+                 except (TypeError, ValueError):
+                     return 0.0
+
+             def _safe_text(value, fallback=""):
+                 if pd.isna(value):
+                     return fallback
+                 return str(value)
+
              return [
                  {
-                     "id": row['Item_ID'],
-                     "Item_ID": row['Item_ID'],
-                     "name": row['Item_Name'],
-                     "Item_Name": row['Item_Name'],
-                     "price": float(str(row['Current_Price']).replace(',', '')),
-                     "Current_Price": float(str(row['Current_Price']).replace(',', '')),
-                     "description": row.get('Item_Description', row.get('Description', 'Delicious add-on')),
-                     "Is_Veg": (str(row.get('Is_Veg', '')).lower() == 'true'),
-                     "Category": row['Item_Category']
+                     "id": _safe_text(row.get('Item_ID')),
+                     "Item_ID": _safe_text(row.get('Item_ID')),
+                     "name": _safe_text(row.get('Item_Name'), 'Unknown Item'),
+                     "Item_Name": _safe_text(row.get('Item_Name'), 'Unknown Item'),
+                     "price": _safe_price(row.get('Current_Price')),
+                     "Current_Price": _safe_price(row.get('Current_Price')),
+                     "description": _safe_text(
+                         row.get('Item_Description', row.get('Description', 'Delicious add-on')),
+                         'Delicious add-on',
+                     ),
+                     "Is_Veg": (_safe_text(row.get('Is_Veg')).lower() == 'true'),
+                     "Category": _safe_text(row.get('Item_Category'), 'Other')
                  }
                  for _, row in upsell_items.iterrows()
              ]
-        except:
+        except Exception:
             return []
 
     def save_user_preference(self, email: str, preferences: Dict):
@@ -190,10 +206,10 @@ class RecommendationAgent:
             # 4. 🔥 Trigger Categorization Agent safely to update insights (Real-time)
             try:
                 from agents.categorization import categorize_single_customer
-                print(f"🤖 Triggering background categorization for {customer_id}")
+                print(f"Triggering background categorization for {customer_id}")
                 categorize_single_customer(customer_id)
             except Exception as cat_err:
-                print(f"⚠️ Non-critical error triggering categorization: {cat_err}")
+                print(f"WARNING: Non-critical error triggering categorization: {cat_err}")
             
             return {"status": "success", "message": "Preferences saved successfully"}
             
@@ -205,7 +221,7 @@ class RecommendationAgent:
     def generate_combos(self, num_combos: int = 3, customer_id: str = None) -> List[Dict]:
         """🤖 SUPER AI COMBO GENERATOR - Powered by Gemini with Deep Customer Intelligence"""
         if not GENERATE_AI_COMBOS:
-            print("ℹ️ AI Combo Generation is disabled via flag.")
+            print("AI Combo Generation is disabled via flag.")
             return []
             
         try:
@@ -226,7 +242,7 @@ class RecommendationAgent:
             # -------------------------------------------------
             # GENERATE NEW
             # -------------------------------------------------
-            print(f"🚀 Generating {num_combos} Super AI Combos for {customer_id or 'guest'}")
+            print(f"Generating {num_combos} Super AI Combos for {customer_id or 'guest'}")
             
             # Step 1: Load active menu
             menu_df = self.sheets_client.read_sheet("Menu")
@@ -271,7 +287,7 @@ class RecommendationAgent:
             return result
 
         except Exception as e:
-            print(f"❌ Combo Generation Error: {e}")
+            print(f"ERROR: Combo Generation Error: {e}")
             traceback.print_exc()
             return []
 
@@ -307,7 +323,7 @@ class RecommendationAgent:
                         
                     insights['order_frequency'] = latest.get('Frequency', 'Occasional Customer')
                     insights['manual_insights'] = latest.get('Attitude', None)
-                    print(f"✅ Found data in Customer_Insights for {customer_id}")
+                    print(f"Found data in Customer_Insights for {customer_id}")
                     return insights
 
             # 2. Fallback: Customer_Preferences sheet (For first-time/new users)
@@ -318,10 +334,10 @@ class RecommendationAgent:
                     latest_pref = user_prefs.iloc[-1]
                     insights['dietary_preference'] = latest_pref.get('Dietary', 'General')
                     # Could extract prefered bread/beverage here too if needed
-                    print(f"✅ Falling back to Customer_Preferences for {customer_id}")
+                    print(f"Falling back to Customer_Preferences for {customer_id}")
                     
         except Exception as e:
-            print(f"⚠️ Error gathering insights for {customer_id}: {e}")
+            print(f"WARNING: Error gathering insights for {customer_id}: {e}")
             
         return insights
 
@@ -390,7 +406,7 @@ class RecommendationAgent:
                             row['quantity'] = it.get('quantity', 1)
                             combo_items.append(row)
                         else:
-                            print(f"⚠️ Could not find menu item: '{it_name}' in active_items ({len(active_items)})")
+                            print(f"WARNING: Could not find menu item: '{it_name}' in active_items ({len(active_items)})")
                             pass # Removed debug print
                     
                     if len(combo_items) >= 2:

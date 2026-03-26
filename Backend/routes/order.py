@@ -24,6 +24,84 @@ def _get_next_sequential_id(table_name: str, id_column: str, prefix: str, paddin
             return f"{prefix}_{str(num + 1).zfill(padding)}"
     return f"{prefix}_{'1'.zfill(padding)}"
 
+
+def _get_customer_rows_by_email(email: str) -> list[dict]:
+    target_email = email.strip().lower()
+    return sqlite_db.fetch_all(
+        """
+        SELECT c.customer_id, c.name, c.created_at, COUNT(o.order_id) as order_count
+        FROM customers c
+        LEFT JOIN orders o ON o.customer_id = c.customer_id
+        WHERE LOWER(c.email) = ?
+        GROUP BY c.customer_id, c.name, c.created_at
+        """,
+        (target_email,),
+    )
+
+
+def _select_primary_customer(email: str) -> dict | None:
+    rows = _get_customer_rows_by_email(email)
+    if not rows:
+        return None
+
+    # Prefer the customer record that already owns the most orders so
+    # repeat visits keep accumulating under the same history.
+    rows.sort(
+        key=lambda row: (
+            -(row.get("order_count") or 0),
+            row.get("created_at") or "",
+            row.get("customer_id") or "",
+        )
+    )
+    return rows[0]
+
+
+def _get_or_create_customer_for_order(email: str, table_number: Optional[str]) -> tuple[str, str]:
+    target_email = email.strip().lower()
+    user_row = _select_primary_customer(target_email)
+    if user_row:
+        return user_row["customer_id"], user_row["name"]
+
+    guest_id = _get_next_sequential_id("customers", "customer_id", "Cust")
+    guest_name = "Guest"
+    timestamp = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+
+    sqlite_db.insert("customers", {
+        "customer_id": guest_id,
+        "name": guest_name,
+        "email": target_email,
+        "phone": "",
+        "date_of_birth": "",
+        "customer_category": "Guest",
+        "table_number": int(table_number) if str(table_number or "").isdigit() else None,
+        "created_at": timestamp,
+        "last_login": timestamp,
+    })
+
+    return guest_id, guest_name
+
+
+def _resolve_menu_item_id(item: "CartItem") -> Optional[str]:
+    candidate_id = item.Item_ID or item.id
+    if candidate_id:
+        menu_row = sqlite_db.fetch_one(
+            "SELECT item_id FROM menu WHERE item_id = ?",
+            (candidate_id,),
+        )
+        if menu_row:
+            return menu_row["item_id"]
+
+    candidate_name = (item.Item_Name or item.name or "").strip()
+    if candidate_name:
+        menu_row = sqlite_db.fetch_one(
+            "SELECT item_id FROM menu WHERE LOWER(name) = ?",
+            (candidate_name.lower(),),
+        )
+        if menu_row:
+            return menu_row["item_id"]
+
+    return None
+
 # ---------------------------------------------------------
 # Request Models
 # ---------------------------------------------------------
@@ -80,12 +158,9 @@ async def get_pricing_strategy(req: PricingRequest):
     order_count = 0
     try:
         # Get customer ID from email
-        user_row = sqlite_db.fetch_one("SELECT customer_id FROM customers WHERE LOWER(email) = ?", (req.customer_email.strip().lower(),))
-        if user_row:
-            customer_id = user_row["customer_id"]
-            # Count existing orders for this customer
-            count_row = sqlite_db.fetch_one("SELECT COUNT(*) as c FROM orders WHERE customer_id = ?", (customer_id,))
-            order_count = count_row["c"] if count_row else 0
+        customer_rows = _get_customer_rows_by_email(req.customer_email)
+        if customer_rows:
+            order_count = sum(int(row.get("order_count") or 0) for row in customer_rows)
     except Exception as e:
         print(f">>> Error fetching order count for coupons: {e}")
     
@@ -105,10 +180,10 @@ async def place_order(req: OrderRequest):
     
     try:
         # 0. Look up Customer details from Customer_Auth (Normalized)
-        target_email = req.customer_email.strip().lower()
-        user_row = sqlite_db.fetch_one("SELECT customer_id, name FROM customers WHERE LOWER(email) = ?", (target_email,))
-        customer_id = user_row["customer_id"] if user_row else "Unknown"
-        customer_name = user_row["name"] if user_row else "Unknown"
+        customer_id, customer_name = _get_or_create_customer_for_order(
+            req.customer_email,
+            req.table_number,
+        )
 
         # 1. Save to Orders Table
         sqlite_db.insert("orders", {
@@ -123,9 +198,10 @@ async def place_order(req: OrderRequest):
         # 2. Save to Order_Items Table
         for idx, item in enumerate(req.cart_items, 1):
             order_item_id = f"{order_id}_Item_{str(idx).zfill(4)}"
-            
-            # Use frontend names or fallbacks
-            item_id = item.Item_ID or item.id or "Unknown"
+
+            # Resolve menu FK safely because combo/fallback items can carry
+            # synthetic frontend ids that do not exist in the backend menu table.
+            item_id = _resolve_menu_item_id(item)
             sqlite_db.insert("order_items", {
                 "order_item_id": order_item_id,
                 "order_id": order_id,
@@ -141,17 +217,17 @@ async def place_order(req: OrderRequest):
         try:
             from agents.categorization import categorize_single_customer
             
-            print(f"\n🤖 Triggering categorization for customer: {customer_id}")
+            print(f"\nTriggering categorization for customer: {customer_id}")
             categorization_success = categorize_single_customer(customer_id)
             
             if categorization_success:
-                print(f"✅ Categorization completed successfully for customer {customer_id}")
+                print(f"Categorization completed successfully for customer {customer_id}")
             else:
-                print(f"⚠️ Categorization failed for customer {customer_id}, but order was saved")
+                print(f"WARNING: Categorization failed for customer {customer_id}, but order was saved")
                 
         except Exception as e:
             # Fail-safe: Don't let categorization errors break order placement
-            print(f"⚠️ Categorization error for customer {customer_id}: {e}")
+            print(f"WARNING: Categorization error for customer {customer_id}: {e}")
             
         return {"status": "success", "order_id": order_id, "message": "Order placed successfully"}
         
@@ -167,12 +243,16 @@ async def get_order_history(email: str):
     Joins Orders and Order_Items.
     """
     try:
-        user_row = sqlite_db.fetch_one("SELECT customer_id FROM customers WHERE LOWER(email) = ?", (email.strip().lower(),))
-        if not user_row:
+        customer_rows = _get_customer_rows_by_email(email)
+        if not customer_rows:
             return {"orders": []}
-            
-        customer_id = user_row["customer_id"]
-        orders = sqlite_db.fetch_all("SELECT * FROM orders WHERE customer_id = ? ORDER BY created_at DESC", (customer_id,))
+
+        customer_ids = [row["customer_id"] for row in customer_rows]
+        placeholders = ", ".join(["?"] * len(customer_ids))
+        orders = sqlite_db.fetch_all(
+            f"SELECT * FROM orders WHERE customer_id IN ({placeholders}) ORDER BY created_at DESC",
+            tuple(customer_ids),
+        )
         
         formatted_orders = []
         for o in orders:

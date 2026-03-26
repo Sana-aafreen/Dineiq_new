@@ -72,6 +72,9 @@ async def log_activity(log: ActivityLog):
                     if customer_name == "Unknown": customer_name = r.get("Customer_Name", "Unknown")
                     break
 
+        if customer_id == "Unknown":
+            return {"status": "ignored", "message": "Activity skipped for unknown customer"}
+
         timestamp = datetime.datetime.now().strftime("%d/%m/%Y %H:%M:%S")
         full_activity = f"{log.activity}: {log.details}" if log.details else log.activity
         
@@ -90,7 +93,7 @@ async def log_activity(log: ActivityLog):
         return {"status": "success", "message": "Activity logged by Monitoring Agent"}
         
     except Exception as e:
-        print(f"❌ Monitoring Agent Error: {e}")
+        print(f"ERROR: Monitoring Agent Error: {e}")
         return {"status": "error", "message": str(e)}
 
 # ---------------------------------------------------------

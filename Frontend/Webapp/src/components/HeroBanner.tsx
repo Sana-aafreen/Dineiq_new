@@ -118,7 +118,7 @@ export default function HeroBanner({ onOrderNow }: HeroBannerProps) {
     const currentMedia = mediaItems[currentIndex];
 
     return (
-        <div className="relative w-full h-[50vh] max-h-[450px] overflow-hidden shadow-2xl mb-6 group/banner font-['DM_Sans',sans-serif]">
+        <div className="group/banner relative mb-5 h-[42vh] min-h-[320px] w-full overflow-hidden shadow-2xl font-['DM_Sans',sans-serif] sm:mb-6 sm:h-[50vh] sm:max-h-[450px]">
             <style>{`
                 @keyframes progressAnim {
                     from { width: 0%; }
@@ -192,7 +192,7 @@ export default function HeroBanner({ onOrderNow }: HeroBannerProps) {
             {/* Decoration Icon — exact Sana sizing */}
             {currentMedia.deco && (
                 <div 
-                    className="absolute right-5 top-1/2 -translate-y-1/2 pointer-events-none select-none"
+                    className="pointer-events-none absolute right-3 top-1/2 hidden -translate-y-1/2 select-none sm:right-5 sm:block"
                     style={{ fontSize: 54, opacity: 0.5, animation: "floatEl 3.5s ease-in-out infinite" }}
                 >
                     {currentMedia.deco}
@@ -202,7 +202,7 @@ export default function HeroBanner({ onOrderNow }: HeroBannerProps) {
             {/* Navigation Arrows - ALWAYS VISIBLE */}
             <button
                 onClick={(e) => { e.stopPropagation(); handlePrev(); }}
-                className="absolute left-4 top-[38%] -translate-y-1/2 z-30 w-11 h-11 rounded-full glass-btn flex items-center justify-center text-white"
+                className="glass-btn absolute left-2 top-[36%] z-30 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-white sm:left-4 sm:top-[38%] sm:flex"
                 aria-label="Previous slide"
             >
                 <ChevronLeft className="w-6 h-6" />
@@ -210,14 +210,14 @@ export default function HeroBanner({ onOrderNow }: HeroBannerProps) {
 
             <button
                 onClick={(e) => { e.stopPropagation(); handleNext(); }}
-                className="absolute right-4 top-[38%] -translate-y-1/2 z-30 w-11 h-11 rounded-full glass-btn flex items-center justify-center text-white"
+                className="glass-btn absolute right-2 top-[36%] z-30 hidden h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-white sm:right-4 sm:top-[38%] sm:flex"
                 aria-label="Next slide"
             >
                 <ChevronRight className="w-6 h-6" />
             </button>
 
             {/* Bottom Content Area */}
-            <div className="absolute inset-0 flex flex-col justify-end px-6 pb-8 pointer-events-none">
+            <div className="pointer-events-none absolute inset-0 flex flex-col justify-end px-4 pb-5 sm:px-6 sm:pb-8">
                 <div className="flex items-center gap-2 mb-2.5">
                     <div className="glass-btn flex items-center gap-1.5 px-2.5 py-1 rounded-full pointer-events-auto">
                         <span className="w-1.5 h-1.5 rounded-full bg-[#1BA672] animate-pulse" style={{ display: "block" }} />
@@ -231,12 +231,12 @@ export default function HeroBanner({ onOrderNow }: HeroBannerProps) {
                     )}
                 </div>
 
-                <h1 className="text-[34px] font-black text-white leading-[1.05]">
+                <h1 className="max-w-[85%] text-[28px] font-black leading-[1.05] text-white sm:max-w-none sm:text-[34px]">
                     {currentMedia.title}{" "}
                     <em style={{ color: currentMedia.accent, fontStyle: "italic" }}>{currentMedia.titleAccent}</em>
                 </h1>
 
-                <p className="text-[12px] mt-1 font-medium" style={{ color: "rgba(255,255,255,.52)" }}>
+                <p className="mt-1 max-w-[90%] text-[11px] font-medium sm:max-w-[70%] sm:text-[12px]" style={{ color: "rgba(255,255,255,.68)" }}>
                     {currentMedia.sub}
                 </p>
 
@@ -252,21 +252,21 @@ export default function HeroBanner({ onOrderNow }: HeroBannerProps) {
             </div>
 
             {/* Bottom-Right Controls Bar (Exact Sana Style) */}
-            <div className="absolute bottom-6 right-6 flex items-center gap-3 pointer-events-auto z-50">
-                <div className="flex items-center gap-1.5 px-4 py-2.5 rounded-full backdrop-blur-xl bg-white/20 border border-white/40 shadow-[0_8px_32px_rgba(0,0,0,0.3)]">
-                    <div className="flex gap-1.5 mr-4">
+            <div className="pointer-events-auto absolute bottom-4 left-4 right-4 z-50 flex items-center justify-between gap-3 sm:bottom-6 sm:left-auto sm:right-6 sm:w-auto sm:justify-end">
+                <div className="flex min-w-0 items-center gap-1.5 rounded-full border border-white/40 bg-white/20 px-3 py-2 backdrop-blur-xl shadow-[0_8px_32px_rgba(0,0,0,0.3)] sm:px-4 sm:py-2.5">
+                    <div className="mr-2 flex gap-1.5 sm:mr-4">
                         {mediaItems.map((_, idx) => (
                             <button
                                 key={idx}
                                 onClick={() => goTo(idx)}
                                 className={`h-1.5 rounded-full transition-all duration-300 ${
-                                    idx === currentIndex ? "w-8 bg-white" : "w-1.5 bg-white/40 hover:bg-white/60"
+                                    idx === currentIndex ? "w-6 bg-white sm:w-8" : "w-1.5 bg-white/40 hover:bg-white/60"
                                 }`}
                             />
                         ))}
                     </div>
                     
-                    <div className="flex items-center gap-3 border-l border-white/20 pl-4">
+                    <div className="flex items-center gap-2 border-l border-white/20 pl-3 sm:gap-3 sm:pl-4">
                         <button
                             onClick={() => setPaused(!paused)}
                             className="w-7 h-7 rounded-full flex items-center justify-center text-white hover:bg-white/10 transition-colors"

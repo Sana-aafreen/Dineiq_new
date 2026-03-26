@@ -4,7 +4,7 @@ import { KPICard } from "@/components/KPICard";
 import { Users, Crown, Clock, RefreshCcw } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { parseGVizJson } from "@/utils/parseGVizJson";
+import { fetchDashboardDataset } from "@/api";
 
 type CustomerAuth = {
   Customer_ID: string;
@@ -29,18 +29,11 @@ const categoryColors: Record<string, string> = {
 export default function CustomerAuthPage() {
   const [data, setData] = useState<CustomerAuth[]>([]);
   const [loading, setLoading] = useState(false);
-  const SPREADSHEET_ID = import.meta.env.VITE_SPREADSHEET_ID;
 
   const fetchCustomerAuth = async () => {
     setLoading(true);
     try {
-      const res = await fetch(
-        `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Customer_Auth&headers=1`
-      );
-      const text = await res.text();
-      const json = JSON.parse(text.substr(47).slice(0, -2));
-
-      const rows: CustomerAuth[] = parseGVizJson(json, "Customer_Auth").map((r: any) => {
+      const rows: CustomerAuth[] = (await fetchDashboardDataset("/dashboard/customers", "customers")).map((r: any) => {
         // Store raw ISO strings for date-based calculations before converting to display format
         r._lastLoginRaw = r.Last_Login_DateTime || "";
 

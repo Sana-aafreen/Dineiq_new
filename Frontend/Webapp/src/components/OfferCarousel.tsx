@@ -1,5 +1,6 @@
 import { ChevronRight } from "lucide-react";
 import { Offer } from "@/lib/data";
+import OfflineImage from "./OfflineImage";
 // @ts-ignore
 import heroVideo from "@/assets/hero-video.mp4";
 
@@ -26,7 +27,7 @@ export default function OfferCarousel({ offers = [], onBannerClick }: OfferCarou
               onClick={() => onBannerClick && onBannerClick(offer)}
               className={`cursor-pointer relative flex-shrink-0 w-[85vw] max-w-[420px] h-48 rounded-2xl overflow-hidden snap-center ${!offer.bgColor?.startsWith('#') ? (offer.bgColor || 'bg-primary') : ''} active:scale-[0.95] transition-transform shadow-lg`}
             >
-              <img
+              <OfflineImage
                 src={offer.image}
                 alt={offer.title}
                 className="absolute inset-0 w-full h-full object-cover mix-blend-overlay opacity-40"

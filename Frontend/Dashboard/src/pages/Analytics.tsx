@@ -8,11 +8,9 @@ import {
 } from "recharts";
 import { Button } from "@/components/ui/button";
 import { RefreshCcw } from "lucide-react";
-import { parseGVizJson, parsePrice } from "@/utils/parseGVizJson";
+import { getDashboardApiBase } from "@/api";
 
 export default function Analytics() {
-  const SPREADSHEET_ID = import.meta.env.VITE_SPREADSHEET_ID;
-
   const [customers, setCustomers] = useState<any[]>([]);
   const [orders, setOrders] = useState<any[]>([]);
   const [menu, setMenu] = useState<any[]>([]);
@@ -22,35 +20,22 @@ export default function Analytics() {
   const [orderItems, setOrderItems] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const fetchSheet = async (sheetName: string) => {
-    const res = await fetch(
-      `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=${sheetName}&headers=1`
-    );
-    const text = await res.text();
-    const json = JSON.parse(text.substr(47).slice(0, -2));
-    return parseGVizJson(json, sheetName);
-  };
-
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [c, o, m, i, cam, ch, oi] = await Promise.all([
-        fetchSheet("Customer_Auth"),
-        fetchSheet("Orders"),
-        fetchSheet("Menu"),
-        fetchSheet("Customer_Insights"),
-        fetchSheet("Campaigns"),
-        fetchSheet("Chats"),
-        fetchSheet("Order_Items"),
-      ]);
+      const response = await fetch(`${getDashboardApiBase()}/dashboard/analytics`);
+      if (!response.ok) {
+        throw new Error(`Failed to load analytics: ${response.status}`);
+      }
 
-      setCustomers(c);
-      setOrders(o);
-      setMenu(m);
-      setInsights(i);
-      setCampaigns(cam);
-      setChats(ch);
-      setOrderItems(oi);
+      const payload = await response.json();
+      setCustomers(payload.customers || []);
+      setOrders(payload.orders || []);
+      setMenu(payload.menu || []);
+      setInsights(payload.insights || []);
+      setCampaigns(payload.campaigns || []);
+      setChats(payload.chats || []);
+      setOrderItems(payload.order_items || []);
     } catch (err) {
       console.error("Error fetching analytics data:", err);
     }
@@ -61,21 +46,21 @@ export default function Analytics() {
 
   // KPI calculations
   const totalCustomers = customers.length;
-  const activeOrders = orders.filter(o => ["Preparing", "Pending"].includes(o.Order_Status)).length;
+  const activeOrders = orders.filter(o => ["created", "preparing", "pending"].includes(String(o.Order_Status || "").toLowerCase())).length;
   const avgOrderValue = orders.length
-    ? Math.round(orders.reduce((sum, o) => sum + parsePrice(o.Order_Price), 0) / orders.length)
+    ? Math.round(orders.reduce((sum, o) => sum + Number(o.Order_Price || 0), 0) / orders.length)
     : 0;
   const avgScore = insights.length
-    ? Math.round(insights.reduce((sum, i) => sum + parsePrice(i.Customer_Score), 0) / insights.length)
+    ? Math.round(insights.reduce((sum, i) => sum + Number(i.Customer_Score || 0), 0) / insights.length)
     : 0;
-  const activeCampaigns = campaigns.filter(c => c.Campaign_Status === "Active").length;
+  const activeCampaigns = campaigns.filter(c => String(c.Campaign_Status || "").toLowerCase() === "active").length;
   const chatVolume = chats.length;
 
   // Charts sample data
   const ordersByDate = orders.map(o => ({
     date: o.Order_Created_DateTime ? new Date(o.Order_Created_DateTime).toLocaleDateString() : "",
     orders: 1,
-    revenue: parsePrice(o.Order_Price),
+    revenue: Number(o.Order_Price || 0),
   })).reduce((acc: any[], cur) => {
     const existing = acc.find(a => a.date === cur.date);
     if (existing) {
@@ -87,7 +72,7 @@ export default function Analytics() {
 
   const revenueByCategory = menu.map(m => ({
     category: m.Item_Category || "Other",
-    revenue: parsePrice(m.Current_Price),
+    revenue: Number(m.Current_Price || 0),
   })).reduce((acc: any[], cur) => {
     const existing = acc.find(a => a.category === cur.category);
     if (existing) existing.revenue += cur.revenue;
@@ -131,7 +116,7 @@ export default function Analytics() {
         const name = String(cur[nameKey] || "").trim();
         // Skip header if it leaked in or if it's an ID-like string
         if (name && !/item_name|item_id|id/i.test(name.toLowerCase())) {
-          const qty = qtyKey ? parsePrice(cur[qtyKey]) : 1;
+          const qty = qtyKey ? Number(cur[qtyKey] || 0) : 1;
           acc[name] = (acc[name] || 0) + qty;
         }
       }

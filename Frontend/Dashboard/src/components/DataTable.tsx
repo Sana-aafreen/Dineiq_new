@@ -40,7 +40,8 @@ export function DataTable<T extends Record<string, any>>({
   const sorted = useMemo(() => {
     if (!sortKey) return filtered;
     return [...filtered].sort((a, b) => {
-      const av = a[sortKey], bv = b[sortKey];
+      const av = a[sortKey];
+      const bv = b[sortKey];
       if (av == null) return 1;
       if (bv == null) return -1;
       const cmp = typeof av === "number" ? av - (bv as number) : String(av).localeCompare(String(bv));
@@ -48,13 +49,13 @@ export function DataTable<T extends Record<string, any>>({
     });
   }, [filtered, sortKey, sortDir]);
 
-  const ps = parseInt(pageSize);
+  const ps = parseInt(pageSize, 10);
   const totalPages = Math.ceil(sorted.length / ps);
   const paged = sorted.slice(page * ps, (page + 1) * ps);
 
   const handleSort = (key: string) => {
     if (sortKey === key) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+      setSortDir((dir) => (dir === "asc" ? "desc" : "asc"));
     } else {
       setSortKey(key);
       setSortDir("asc");
@@ -68,20 +69,32 @@ export function DataTable<T extends Record<string, any>>({
     setPage(0);
   };
 
+  const from = sorted.length === 0 ? 0 : page * ps + 1;
+  const to = Math.min((page + 1) * ps, sorted.length);
+
   return (
-    <div className="space-y-4 w-full max-w-full overflow-hidden">
-      <div className="flex items-center gap-3 flex-wrap">
-        <div className="relative flex-1 min-w-[200px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+    <div className="w-full max-w-full space-y-4 overflow-hidden">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="relative min-w-[200px] flex-1">
+          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
             value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+            onChange={(e) => {
+              setSearch(e.target.value);
+              setPage(0);
+            }}
             placeholder={searchPlaceholder}
             className="pl-9"
           />
         </div>
-        <Select value={pageSize} onValueChange={(v) => { setPageSize(v); setPage(0); }}>
-          <SelectTrigger className="w-[100px]">
+        <Select
+          value={pageSize}
+          onValueChange={(value) => {
+            setPageSize(value);
+            setPage(0);
+          }}
+        >
+          <SelectTrigger className="w-full sm:w-[100px]">
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
@@ -92,12 +105,12 @@ export function DataTable<T extends Record<string, any>>({
           </SelectContent>
         </Select>
         <Button variant="outline" size="sm" onClick={reset}>
-          <RotateCcw className="h-4 w-4 mr-1" /> Reset
+          <RotateCcw className="mr-1 h-4 w-4" /> Reset
         </Button>
       </div>
 
-      <div className="rounded-lg border overflow-hidden">
-        <div className="overflow-x-auto w-full">
+      <div className="overflow-hidden rounded-lg border bg-card">
+        <div className="w-full overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -109,11 +122,12 @@ export function DataTable<T extends Record<string, any>>({
                   >
                     <div className="flex items-center gap-1">
                       {col.label}
-                      {col.sortable !== false && (
-                        sortKey === col.key
-                          ? (sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />)
-                          : <ArrowUpDown className="h-3 w-3 opacity-30" />
-                      )}
+                      {col.sortable !== false &&
+                        (sortKey === col.key ? (
+                          sortDir === "asc" ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />
+                        ) : (
+                          <ArrowUpDown className="h-3 w-3 opacity-30" />
+                        ))}
                     </div>
                   </TableHead>
                 ))}
@@ -122,16 +136,16 @@ export function DataTable<T extends Record<string, any>>({
             <TableBody>
               {paged.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={columns.length} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={columns.length} className="py-8 text-center text-muted-foreground">
                     No data found
                   </TableCell>
                 </TableRow>
               ) : (
-                paged.map((row, i) => (
-                  <TableRow key={i} className="hover:bg-muted/30">
+                paged.map((row, index) => (
+                  <TableRow key={index} className="hover:bg-muted/30">
                     {columns.map((col) => (
                       <TableCell key={col.key} className="max-w-[300px]">
-                        <div className="overflow-auto max-h-[80px]">
+                        <div className="max-h-[80px] overflow-auto">
                           {col.render ? col.render(row[col.key], row) : String(row[col.key] ?? "")}
                         </div>
                       </TableCell>
@@ -144,15 +158,27 @@ export function DataTable<T extends Record<string, any>>({
         </div>
       </div>
 
-      <div className="flex items-center justify-between text-sm text-muted-foreground">
-        <span>
-          Showing {sorted.length === 0 ? 0 : page * ps + 1}–{Math.min((page + 1) * ps, sorted.length)} of {sorted.length}
+      <div className="flex flex-col gap-3 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <span className="text-xs sm:text-sm">
+          Showing {from}-{to} of {sorted.length}
         </span>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(page - 1)}>
+        <div className="flex gap-2 self-end sm:self-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            className="min-w-[96px]"
+            disabled={page === 0}
+            onClick={() => setPage(page - 1)}
+          >
             Previous
           </Button>
-          <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(page + 1)}>
+          <Button
+            variant="outline"
+            size="sm"
+            className="min-w-[96px]"
+            disabled={page >= totalPages - 1}
+            onClick={() => setPage(page + 1)}
+          >
             Next
           </Button>
         </div>

@@ -142,7 +142,7 @@ const Payment = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, refreshOrders } = useUser();
-  const { clearCart } = useCart();
+  const { clearCart, items: liveCartItems, totalPrice: liveTotalPrice } = useCart();
 
   // Receive data from cart
   const { totalAmount, cartItems, instructions, tableNumber: stateTable } = location.state || { totalAmount: 0, cartItems: [], instructions: "", tableNumber: "" };
@@ -154,15 +154,24 @@ const Payment = () => {
   const [showStatusModal, setShowStatusModal] = useState(false);
   const [orderStatus, setOrderStatus] = useState<'idle' | 'processing' | 'success'>('idle');
   const paymentPromiseRef = useRef<Promise<any> | null>(null);
+  const [orderCompleted, setOrderCompleted] = useState(false);
+  const isOrderSaved = (response: any) =>
+    response && (response.status === "success" || response.status === "queued");
+  const effectiveCartItems = orderCompleted
+    ? []
+    : (liveCartItems.length > 0 ? liveCartItems : cartItems);
+  const effectiveTotalAmount = orderCompleted
+    ? 0
+    : (liveCartItems.length > 0 ? liveTotalPrice : totalAmount);
 
   const handleCashPayment = async () => {
     setShowStatusModal(true);
     setOrderStatus('processing');
 
     const orderData = {
-      customer_email: user?.email || "guest@dineiq.ai",
-      cart_items: cartItems,
-      final_total: totalAmount,
+      customer_email: user?.email || "guest@dineiq.com",
+      cart_items: effectiveCartItems,
+      final_total: effectiveTotalAmount,
       discount_amount: 0,
       payment_method: 'CASH',
       instructions: instructions,
@@ -175,13 +184,13 @@ const Payment = () => {
         new Promise(resolve => setTimeout(resolve, 1000))
       ]);
 
-      if (response && response.status === "success") {
+      if (isOrderSaved(response)) {
         setOrderStatus('success');
-        saveLog(user?.email || "Guest", "ORDER_PLACED", `Method: CASH, Total: KSh ${totalAmount}`);
+        setOrderCompleted(true);
         clearCart();
-        refreshOrders();
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        navigate('/home');
+        void saveLog(user?.email || "Guest", "ORDER_PLACED", `Method: CASH, Total: KSh ${effectiveTotalAmount}`);
+        void refreshOrders();
+        navigate('/orders', { replace: true });
       } else {
         setShowStatusModal(false);
         toast.error(response?.message || "Failed to place order.");
@@ -196,9 +205,9 @@ const Payment = () => {
 
   const handlePaymentAttempt = () => {
     const orderData = {
-      customer_email: user?.email || "guest@dineiq.ai",
-      cart_items: cartItems,
-      final_total: totalAmount,
+      customer_email: user?.email || "guest@dineiq.com",
+      cart_items: effectiveCartItems,
+      final_total: effectiveTotalAmount,
       discount_amount: 0,
       payment_method: 'ONLINE',
       instructions: instructions,
@@ -213,12 +222,12 @@ const Payment = () => {
       if (!paymentPromiseRef.current) handlePaymentAttempt();
       const response = await paymentPromiseRef.current;
 
-      if (response && response.status === "success") {
-        saveLog(user?.email || "Guest", "ORDER_PLACED", `Method: ONLINE, Total: KSh ${totalAmount}`);
+      if (isOrderSaved(response)) {
+        setOrderCompleted(true);
         clearCart();
-        refreshOrders();
-        await new Promise(resolve => setTimeout(resolve, 1000));
-        navigate('/home');
+        void saveLog(user?.email || "Guest", "ORDER_PLACED", `Method: ONLINE, Total: KSh ${effectiveTotalAmount}`);
+        void refreshOrders();
+        navigate('/orders', { replace: true });
       } else {
         setShowStripeModal(false);
         toast.error(response?.message || "Payment Failed.");
@@ -232,8 +241,8 @@ const Payment = () => {
     }
   };
 
-  const taxes = Math.round(totalAmount * 0.05);
-  const subtotal = totalAmount - taxes;
+  const taxes = Math.round(effectiveTotalAmount * 0.05);
+  const subtotal = effectiveTotalAmount - taxes;
 
   const payOptions = [
     {
@@ -280,7 +289,7 @@ const Payment = () => {
           <div className="amount-card fu">
             <p className="text-[10px] font-bold uppercase tracking-widest text-white/40 mb-2">Total Amount Due</p>
             <p className="text-4xl font-black text-white leading-none mb-1">
-              KSh {totalAmount.toLocaleString()}
+              KSh {effectiveTotalAmount.toLocaleString()}
             </p>
             <p className="text-xs text-white/40 mb-5">Inclusive of all taxes & fees</p>
 
@@ -299,18 +308,18 @@ const Payment = () => {
               </div>
             </div>
 
-            {cartItems.length > 0 && (
+            {effectiveCartItems.length > 0 && (
               <div className="mt-4">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-white/30 mb-2">Your Order</p>
                 <div className="space-y-2">
-                  {cartItems.slice(0, 3).map((item: any, i: number) => (
+                  {effectiveCartItems.slice(0, 3).map((item: any, i: number) => (
                     <div key={i} className="flex justify-between border-b border-white/5 pb-2 last:border-0 last:pb-0">
                       <span className="text-[12px] text-white/60 font-medium">{item.quantity}× {item.name}</span>
                       <span className="text-[12px] font-bold text-white/70">KSh {(item.price * item.quantity).toLocaleString()}</span>
                     </div>
                   ))}
-                  {cartItems.length > 3 && (
-                    <p className="text-[11px] text-white/30 mt-2">+{cartItems.length - 3} more items</p>
+                  {effectiveCartItems.length > 3 && (
+                    <p className="text-[11px] text-white/30 mt-2">+{effectiveCartItems.length - 3} more items</p>
                   )}
                 </div>
               </div>
@@ -377,10 +386,10 @@ const Payment = () => {
           <div className="flex justify-between items-center mb-3">
             <div>
               <p className="text-[11px] text-[#9E9E9E] font-bold uppercase tracking-wider">{paymentMethod === 'cash' ? 'Pay at counter' : 'Secure Online Payment'}</p>
-              <p className="text-2xl font-black text-[#1C1C1C]">KSh {totalAmount.toLocaleString()}</p>
+              <p className="text-2xl font-black text-[#1C1C1C]">KSh {effectiveTotalAmount.toLocaleString()}</p>
             </div>
             <div className="text-right">
-              <p className="text-[10px] text-[#9E9E9E]">{cartItems.length} items</p>
+              <p className="text-[10px] text-[#9E9E9E]">{effectiveCartItems.length} items</p>
               <p className="text-[11px] font-bold text-[#1BA672]">FREE Delivery</p>
             </div>
           </div>
@@ -401,7 +410,7 @@ const Payment = () => {
             ) : (
               <>
                 <CreditCard className="w-4 h-4" />
-                Pay Now · KSh {totalAmount.toLocaleString()}
+                Pay Now · KSh {effectiveTotalAmount.toLocaleString()}
                 <ChevronRight className="w-4 h-4" />
               </>
             )}
@@ -414,7 +423,7 @@ const Payment = () => {
           onClose={() => setShowStripeModal(false)}
           onSuccess={handleStripeSuccess}
           onPaymentAttempt={handlePaymentAttempt}
-          amount={totalAmount}
+          amount={effectiveTotalAmount}
           userEmail={user?.email}
           userName={user?.name}
         />

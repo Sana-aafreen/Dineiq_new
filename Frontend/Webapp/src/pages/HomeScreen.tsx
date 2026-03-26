@@ -10,6 +10,7 @@ import CartBar from "@/components/CartBar";
 import AIButton from "@/components/AIButton";
 import { saveLog } from "@/utils/logger";
 import { offlineApi as api } from "@/utils/offlineApi";
+import { getOfflineMediaCoverage } from "@/lib/offlineOrderStore";
 import { MenuItem, Category } from "@/lib/data";
 import { extractDynamicCategories, getMenuItemImage } from "@/lib/categoryUtils";
 import { Ticket, Percent, Gift, Sparkles, RefreshCw, Bell, UtensilsCrossed, Clock, ShoppingBag, Receipt } from "lucide-react";
@@ -60,6 +61,8 @@ export default function HomeScreen() {
   const [activeOrder, setActiveOrder] = useState<any>(null);
   const [showBill, setShowBill] = useState(false);
   const [showWaiterMsg, setShowWaiterMsg] = useState(false);
+  const [offlineMediaStatus, setOfflineMediaStatus] = useState<string | null>(null);
+  const [offlineMediaReady, setOfflineMediaReady] = useState(false);
 
   const tableNo = ctxTable || localStorage.getItem("dineiq_table_number") || "1";
   const userName = user?.name || "Guest";
@@ -88,6 +91,39 @@ export default function HomeScreen() {
       color: "from-purple-500 to-pink-500"
     }
   ];
+
+  const updateOfflineMediaStatus = useCallback(async (menuData: any, offersData: any) => {
+    const mediaUrls = new Set<string>();
+
+    Object.values(menuData?.menu_sections || {}).forEach((items: any) => {
+      if (!Array.isArray(items)) return;
+      items.forEach((item: any) => {
+        const imageUrl = item?.Image_URL || item?.image;
+        if (imageUrl) mediaUrls.add(String(imageUrl));
+      });
+    });
+
+    if (Array.isArray(offersData?.offers)) {
+      offersData.offers.forEach((offer: any) => {
+        if (offer?.image) mediaUrls.add(String(offer.image));
+      });
+    }
+
+    const { cached, total } = await getOfflineMediaCoverage(Array.from(mediaUrls));
+
+    if (total === 0) {
+      setOfflineMediaStatus(null);
+      setOfflineMediaReady(false);
+      return;
+    }
+
+    setOfflineMediaReady(cached >= total);
+    setOfflineMediaStatus(
+      cached >= total
+        ? `Offline media cached ${cached}/${total}`
+        : `Caching offline media ${cached}/${total}`
+    );
+  }, []);
 
   useEffect(() => {
     if (!isLoggedIn) {
@@ -122,7 +158,7 @@ export default function HomeScreen() {
                 description: item.Item_Description || item.description || '',
                 price: parseFloat(String(item.Current_Price || item.price || 0).replace(/,/g, "")),
                 category: item.Item_Category || category || 'Other',
-                image: getMenuItemImage(item),
+                image: item.Image_URL || item.image || getMenuItemImage(item),
                 isVeg: String(item.Is_Veg || item.isVeg).toLowerCase() === 'true',
                 rating: 4.5,
                 ratingCount: 10,
@@ -165,6 +201,8 @@ export default function HomeScreen() {
                 .catch(err => console.error("âŒ Failed to fetch AI combos:", err));
             }
           }
+
+          await updateOfflineMediaStatus(menuData, offersData);
         } catch (e) {
           console.error("âŒ Error loading Home Screen data:", e);
         } finally {
@@ -174,7 +212,7 @@ export default function HomeScreen() {
 
       loadData();
     }
-  }, [isLoggedIn, navigate, user]);
+  }, [isLoggedIn, navigate, updateOfflineMediaStatus, user]);
 
   useEffect(() => {
     if (!tableNo) return;
@@ -381,10 +419,15 @@ export default function HomeScreen() {
   if (!isLoggedIn) return null;
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-orange-50 via-white to-amber-50 pb-32">
-      <HomeHeader onSearch={handleSearch} searchQuery={searchQuery} />
+    <div className="min-h-screen overflow-x-hidden bg-gradient-to-br from-orange-50 via-white to-amber-50 pb-32">
+      <HomeHeader
+        onSearch={handleSearch}
+        searchQuery={searchQuery}
+        offlineMediaStatus={offlineMediaStatus}
+        offlineMediaReady={offlineMediaReady}
+      />
 
-      <main className="animate-fade-in flex flex-col gap-6 pt-0"> {/* Removed top padding for Hero edge-to-edge */}
+      <main className="animate-fade-in flex flex-col gap-5 pt-0 md:gap-6"> {/* Removed top padding for Hero edge-to-edge */}
 
         {/* Only show Hero & Banners if NOT searching */}
         {!searchQuery && (
@@ -447,7 +490,7 @@ export default function HomeScreen() {
             {GENERATE_AI_COMBOS ? (
               aiCombos.length > 0 && (
                 <div id="ai-combos" className="py-2 scroll-mt-24 bg-transparent mb-4">
-                  <div className="mx-4 mb-4 p-4 rounded-2xl flex items-center justify-between bg-indigo-50 border border-indigo-100/50">
+                  <div className="mx-4 mb-4 flex flex-col gap-2 rounded-2xl border border-indigo-100/50 bg-indigo-50 p-4 sm:flex-row sm:items-center sm:justify-between">
                     <div>
                       <div className="flex items-center gap-2 mb-1">
                         <Sparkles className="w-5 h-5 text-indigo-500 fill-indigo-500" />
@@ -457,7 +500,7 @@ export default function HomeScreen() {
                     </div>
                   </div>
 
-                  <div className="flex gap-4 px-4 overflow-x-auto pb-4 hide-scrollbar snap-x snap-mandatory scroll-smooth">
+                  <div className="hide-scrollbar flex gap-4 overflow-x-auto px-4 pb-4 snap-x snap-mandatory scroll-smooth">
                     {aiCombos.map((combo) => (
                       <AIComboCard key={combo.Item_ID} combo={combo} />
                     ))}
@@ -675,6 +718,7 @@ const DineInBar = ({
       display: "flex",
       alignItems: "center",
       justifyContent: "space-between",
+      flexWrap: "wrap",
       padding: "12px 16px",
       gap: 8,
     }}>

@@ -13,6 +13,7 @@ import {
 } from "@/utils/chatUtils";
 import { useToast } from "@/hooks/use-toast";
 import { MessageSquare } from "lucide-react";
+import { API_BASE_URL } from "@/config";
 
 const ChatbotPage = () => {
   const navigate = useNavigate();
@@ -118,8 +119,7 @@ const ChatbotPage = () => {
 
     setLoading(true);
     try {
-      const API_URL = import.meta.env.VITE_API_URL;
-      const response = await fetch(`${API_URL}/chatbot/llm-chat`, {
+      const response = await fetch(`${API_BASE_URL}/chatbot/llm-chat`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

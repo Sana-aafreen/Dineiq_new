@@ -1,5 +1,6 @@
 import { useCart } from "@/contexts/CartContext";
 import { Plus, Minus, Sparkles, Star, TrendingUp } from "lucide-react";
+import OfflineImage from "./OfflineImage";
 
 interface ComboItem {
     name: string;
@@ -63,7 +64,7 @@ export default function AIComboCard({ combo }: ComboCardProps) {
         <div className="bg-white rounded-2xl overflow-hidden transition-all duration-300 hover:shadow-xl border border-gray-100 flex-shrink-0 w-[340px] md:w-[380px] snap-center group">
             {/* Image Section */}
             <div className="relative h-48 overflow-hidden bg-gray-100">
-                <img
+                <OfflineImage
                     src={cartItem.image}
                     alt={cartItem.name}
                     className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"

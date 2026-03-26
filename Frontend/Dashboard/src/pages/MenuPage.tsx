@@ -9,10 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "@/hooks/use-toast";
 import { Plus, Pencil, Trash2, UtensilsCrossed, CheckCircle, XCircle, RefreshCcw } from "lucide-react";
-import { parseGVizJson, parsePrice } from "@/utils/parseGVizJson";
-
-// Spreadsheet ID from your .env file
-const SPREADSHEET_ID = import.meta.env.VITE_SPREADSHEET_ID;
+import { fetchDashboardDataset, ONLINE_API_BASE_URL } from "@/api";
 
 interface MenuItem {
   Item_ID: string;
@@ -46,21 +43,15 @@ export default function MenuPage() {
   const fetchMenu = async () => {
     setLoading(true);
     try {
-      const response = await fetch(
-        `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Menu&headers=1`
-      );
-      const text = await response.text();
-      const json = JSON.parse(text.substr(47).slice(0, -2));
-
-      const rows: any[] = parseGVizJson(json, "Menu");
+      const rows: any[] = await fetchDashboardDataset("/dashboard/menu", "items");
 
       // Normalize Is_Active to uppercase string "ACTIVE"/"INACTIVE"
       const normalizedData: MenuItem[] = rows.map((i: any) => ({
         ...i,
-        Base_Price: parsePrice(i.Base_Price),
-        Low_Cap_Price: parsePrice(i.Low_Cap_Price),
-        High_Cap_Price: parsePrice(i.High_Cap_Price),
-        Current_Price: parsePrice(i.Current_Price),
+        Base_Price: Number(i.Base_Price || 0),
+        Low_Cap_Price: Number(i.Low_Cap_Price || 0),
+        High_Cap_Price: Number(i.High_Cap_Price || 0),
+        Current_Price: Number(i.Current_Price || 0),
         Is_Active:
           i.Is_Active !== undefined && i.Is_Active !== null
             ? String(i.Is_Active).toUpperCase()
@@ -79,7 +70,7 @@ export default function MenuPage() {
     setLoading(true);
     toast({ title: "Syncing...", description: "Extracting menu from Harvest Kenya website..." });
     try {
-      const response = await fetch("http://localhost:8000/menu/sync-external", {
+      const response = await fetch(`${ONLINE_API_BASE_URL}/menu/sync-external`, {
         method: "POST"
       });
       const result = await response.json();

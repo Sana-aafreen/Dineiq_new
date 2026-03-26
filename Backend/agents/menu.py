@@ -11,6 +11,7 @@ import re
 
 # import agents and services classes
 from services.dependencies import sheets as _sheets_singleton, gemini_menu as _gemini_singleton, groq_menu as _groq_singleton
+from services.menu_sheet_sync import sync_menu_from_google_sheets_to_sqlite
 
 # ---------------------------------------------------------
 # Load environment variables
@@ -878,6 +879,20 @@ async def sync_external_menu(agent: MenuAgent = Depends(get_menu_agent)):
     try:
         result = agent.sync_external_menu()
         return result
+    except Exception as e:
+        from fastapi import HTTPException
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@menu_router.post("/refresh-from-sheet")
+async def refresh_menu_from_sheet():
+    """
+    Refresh SQLite menu directly from the live Google Sheet.
+    """
+    try:
+        return sync_menu_from_google_sheets_to_sqlite()
     except Exception as e:
         from fastapi import HTTPException
         import traceback

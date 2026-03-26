@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { categories, Category } from "@/lib/data";
+import OfflineImage from "./OfflineImage";
 
 interface CategoryScrollProps {
   categories?: Category[];
@@ -96,7 +97,7 @@ export default function CategoryScroll({ categories: dynamicCategories, onSelect
               {/* Right: Image */}
               <div className="relative flex-shrink-0">
                 <div className="w-[70px] h-[70px] rounded-2xl overflow-hidden shadow-sm bg-gray-100">
-                  <img
+                  <OfflineImage
                     src={category.image}
                     alt={category.name}
                     className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"

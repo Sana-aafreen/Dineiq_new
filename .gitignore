@@ -1,0 +1,52 @@
+# Environment files
+.env
+Frontend/.env
+Frontend/Webapp/.env
+Frontend/Dashboard/.env
+Backend/.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+Backend/venv/
+
+# SQLite runtime files
+*.db-shm
+*.db-wal
+Backend/sqliteDB/DineIQ_Database.db
+local-server/*.db
+
+# Local backup/data exports
+Backend/sqliteDB/gsheet_backups/
+
+# Node
+node_modules/
+
+# Frontend build outputs
+Frontend/Webapp/dist/
+Frontend/Webapp/dev-dist/
+Frontend/Dashboard/dist/
+
+# Android / Capacitor generated outputs
+Frontend/Webapp/android/.gradle/
+Frontend/Webapp/android/.gradle-home/
+Frontend/Webapp/android/.android-home/
+Frontend/Webapp/android/app/build/
+Frontend/Webapp/android/build/
+Frontend/Webapp/android/local.properties
+Frontend/Webapp/android/captures/
+Frontend/Dashboard/android/.gradle/
+Frontend/Dashboard/android/app/build/
+Frontend/Dashboard/android/build/
+Frontend/Dashboard/android/local.properties
+Frontend/Dashboard/android/captures/
+
+# APK / bundle artifacts
+*.apk
+*.aab
+
+# OS / IDE
+.DS_Store
+Thumbs.db

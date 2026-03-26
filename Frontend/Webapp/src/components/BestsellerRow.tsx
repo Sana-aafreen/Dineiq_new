@@ -1,6 +1,7 @@
 import { MenuItem } from "@/lib/data";
 import { useCart } from "@/contexts/CartContext";
 import { Star, Plus, Minus, TrendingUp } from "lucide-react";
+import OfflineImage from "./OfflineImage";
 
 interface BestsellerRowProps {
   item: MenuItem;
@@ -35,7 +36,7 @@ export default function BestsellerRow({ item, rank, source = "Bestsellers" }: Be
 
       {/* Item Image */}
       <div className="w-[64px] h-[64px] rounded-xl overflow-hidden shadow-sm bg-gray-100 flex-shrink-0">
-        <img
+        <OfflineImage
           src={item.image}
           alt={item.name}
           className="w-full h-full object-cover"

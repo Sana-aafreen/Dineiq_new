@@ -1,10 +1,13 @@
 import { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useUser } from "@/contexts/UserContext";
 import { toast } from "sonner";
 import { motion, AnimatePresence } from "framer-motion";
-import { API_BASE_URL } from "@/config";
+import { API_BASE_URL, LOCAL_API_BASE_URL, ONLINE_APP_URL_STORAGE_KEY } from "@/config";
+import { setNetworkMode } from "@/config";
 import { Html5Qrcode } from "html5-qrcode";
+import splashBg from "@/assets/restaurant-splash.jpg";
+import heroVideo from "@/assets/hero-video.mp4";
 
 // -- Design tokens --------------------------------------------------------------
 const Z = {
@@ -18,6 +21,9 @@ const Z = {
   muted:    "#93959F",
   green:    "#3D9B6E",
 };
+
+const LOCAL_WIFI_ID = import.meta.env.VITE_LOCAL_WIFI_SSID || "DineIQ-Local";
+const LOCAL_WIFI_PASSWORD = import.meta.env.VITE_LOCAL_WIFI_PASSWORD || "dineiq123";
 
 // -- Extract table number from any QR payload -----------------------------------
 // Confirmed QR format: "http://localhost:8000/?table=1"
@@ -154,6 +160,7 @@ function QRStep({ onTableConfirmed }: { onTableConfirmed: (n: number) => void })
 
   return (
     <motion.div
+      className="login-qr-step"
       key="qr-step"
       initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -10 }} transition={{ duration: 0.3 }}
@@ -169,7 +176,7 @@ function QRStep({ onTableConfirmed }: { onTableConfirmed: (n: number) => void })
       </div>
 
       {/* -- Camera viewport -- */}
-      <div style={{
+      <div className="login-qr-viewport" style={{
         position: "relative", width: 260, height: 260,
         borderRadius: 20, overflow: "hidden", background: "#111",
         boxShadow: scanStatus === "success"
@@ -300,8 +307,9 @@ function QRStep({ onTableConfirmed }: { onTableConfirmed: (n: number) => void })
                       color: Z.sub, textAlign: "center" }}>
             Enter table number
           </p>
-          <div style={{ display: "flex", gap: 10 }}>
+          <div className="login-manual-row" style={{ display: "flex", gap: 10 }}>
             <input
+              className="login-manual-input"
               type="number" min={1} max={999}
               value={manualVal}
               onChange={e => { setManualVal(e.target.value); setErrorMsg(""); }}
@@ -316,6 +324,7 @@ function QRStep({ onTableConfirmed }: { onTableConfirmed: (n: number) => void })
               }}
             />
             <button
+              className="login-manual-button"
               onClick={handleManual}
               disabled={!manualVal.trim()}
               style={{
@@ -851,36 +860,60 @@ function TableBadge({ tableNum, onRescan }: { tableNum: number; onRescan: () => 
 // ------------------------------------------------------------------------------
 export default function LoginScreen() {
   const navigate = useNavigate();
-  const { login } = useUser();
+  const location = useLocation();
+  const { login, isLoggedIn } = useUser();
 
-  const [phase,       setPhase]       = useState<"scan" | "auth">("scan");
+  const [phase,       setPhase]       = useState<"scan" | "network" | "auth">("scan");
   const [tableNumber, setTableNumber] = useState<number | null>(null);
+  const [showLocalWifiForm, setShowLocalWifiForm] = useState(false);
+  const [localWifiId, setLocalWifiId] = useState("");
+  const [localWifiPassword, setLocalWifiPassword] = useState("");
+  const [isLocalConnecting, setIsLocalConnecting] = useState(false);
 
   // Skip scan if table already known via URL param or localStorage
   useEffect(() => {
     const p = new URLSearchParams(window.location.search);
     const t = p.get("table");
+    const localWifi = p.get("localWifi");
 
     if (t && /^\d+$/.test(t)) {
       setTableNumber(parseInt(t, 10));
-      setPhase("auth");
+      setPhase(localWifi === "1" ? "network" : "auth");
+      if (localWifi === "1") {
+        setShowLocalWifiForm(true);
+        setLocalWifiId(LOCAL_WIFI_ID);
+      }
     } else {
       // ✅ Key matches UserContext
       const saved = localStorage.getItem("dineiq_table_number");
       if (saved) {
         setTableNumber(parseInt(saved));
-        setPhase("auth");
+        setPhase(localWifi === "1" ? "network" : "auth");
+        if (localWifi === "1") {
+          setShowLocalWifiForm(true);
+          setLocalWifiId(LOCAL_WIFI_ID);
+        }
       }
     }
   }, []);
 
   const getTable = () => tableNumber ?? 1;
 
+  const openLocalWifiFallback = (message?: string) => {
+    setPhase("network");
+    setShowLocalWifiForm(true);
+    if (message) {
+      toast.info("Switch to restaurant Wi-Fi", {
+        description: message,
+      });
+    }
+  };
+
   // ✅ Key matches UserContext
   const handleTableConfirmed = (n: number) => {
     localStorage.setItem("dineiq_table_number", String(n));
     setTableNumber(n);
-    setPhase("auth");
+    setPhase("network");
   };
 
   // -- Auth state -------------------------------------------------------------
@@ -947,11 +980,13 @@ export default function LoginScreen() {
         resetToTab("register");
       }
     } catch (err: any) {
-      toast.error(
-        err?.message?.includes("Server error")
-          ? "Server error. Please try again."
-          : "Connection failed. Check your internet and try again."
-      );
+      const isServerError = err?.message?.includes("Server error");
+      toast.error(isServerError ? "Server error. Please try again." : "Connection failed.");
+      if (!isServerError) {
+        openLocalWifiFallback(
+          "Internet looks unstable. Enter the local Wi-Fi ID and password to keep ordering on the local DineIQ server."
+        );
+      }
     } finally { setIsLoading(false); }
   };
 
@@ -974,7 +1009,12 @@ export default function LoginScreen() {
       } else {
         toast.error("Invalid OTP. Please try again.");
       }
-    } catch { toast.error("Verification failed. Please try again."); }
+    } catch {
+      toast.error("Verification failed. Try again, or connect to the restaurant Wi-Fi for local ordering.");
+      openLocalWifiFallback(
+        "You can keep ordering locally while internet is unavailable."
+      );
+    }
     finally { setIsLoading(false); }
   };
 
@@ -999,7 +1039,12 @@ export default function LoginScreen() {
       } else {
         toast.error(data.message || "Unable to send OTP. Try again.");
       }
-    } catch { toast.error("Registration failed. Check your connection."); }
+    } catch {
+      toast.error("Registration failed. Check your connection, or connect to the restaurant Wi-Fi and continue locally.");
+      openLocalWifiFallback(
+        "Use the restaurant Wi-Fi to save orders offline and sync them back to backend SQLite later."
+      );
+    }
     finally { setIsLoading(false); }
   };
 
@@ -1021,7 +1066,12 @@ export default function LoginScreen() {
       } else {
         toast.error("Invalid OTP. Please try again.");
       }
-    } catch { toast.error("Verification failed. Please try again."); }
+    } catch {
+      toast.error("Verification failed. Try again, or connect to the restaurant Wi-Fi for local ordering.");
+      openLocalWifiFallback(
+        "Use the restaurant Wi-Fi to continue on the local DineIQ server."
+      );
+    }
     finally { setIsLoading(false); }
   };
 
@@ -1033,6 +1083,91 @@ export default function LoginScreen() {
     navigate("/home");
   };
 
+  const handleStartOnline = () => {
+    setNetworkMode("online");
+    setShowLocalWifiForm(false);
+    setLocalWifiPassword("");
+    const params = new URLSearchParams(location.search);
+    params.delete("localWifi");
+    const destinationPath = isLoggedIn ? "/home" : "/login";
+    const storedOnlineUrl = localStorage.getItem(ONLINE_APP_URL_STORAGE_KEY);
+    const isOnLocalServerOrigin = window.location.origin === new URL(LOCAL_API_BASE_URL).origin;
+
+    if (storedOnlineUrl && isOnLocalServerOrigin) {
+      const onlineUrl = new URL(storedOnlineUrl);
+      onlineUrl.pathname = destinationPath;
+      onlineUrl.search = params.toString() ? `?${params.toString()}` : "";
+      window.location.href = onlineUrl.toString();
+      return;
+    }
+
+    navigate(
+      {
+        pathname: destinationPath,
+        search: params.toString() ? `?${params.toString()}` : "",
+      },
+      { replace: true }
+    );
+    if (!isLoggedIn) {
+      setPhase("auth");
+    }
+  };
+
+  const enterLocalMode = () => {
+    const t = getTable();
+    const derivedEmail =
+      (email && emailValid ? email.trim().toLowerCase() : "") || "guest@dineiq.com";
+    const derivedName =
+      (name && name.trim()) ||
+      (derivedEmail !== "guest@dineiq.com" ? derivedEmail.split("@")[0] : "Guest");
+    const derivedId = derivedEmail === "guest@dineiq.com" ? "guest" : `local_${derivedEmail}`;
+
+    setNetworkMode("local");
+    localStorage.setItem("dineiq_table_number", String(t));
+    login(String(t), 1, derivedName, mobile || "", derivedEmail, derivedId);
+    toast.success("Local ordering mode enabled", {
+      description: "Orders will be saved to the local server as pending_sync and synced into backend SQLite later.",
+    });
+    navigate("/home");
+  };
+
+  const handleStartLocal = () => {
+    setShowLocalWifiForm(true);
+    setLocalWifiId((current) => current || LOCAL_WIFI_ID);
+  };
+
+  const handleLocalWifiConnect = async () => {
+    if (localWifiId.trim() !== LOCAL_WIFI_ID || localWifiPassword !== LOCAL_WIFI_PASSWORD) {
+      toast.error("Incorrect local Wi-Fi credentials");
+      return;
+    }
+
+    setIsLocalConnecting(true);
+    try {
+      const res = await fetch(`${LOCAL_API_BASE_URL}/health`);
+      if (!res.ok) {
+        throw new Error(`Local server unavailable: ${res.status}`);
+      }
+      enterLocalMode();
+    } catch {
+      toast.error("Local DineIQ server is not reachable yet.");
+      toast.info("Check that the restaurant Wi-Fi is connected and the local server is running on the LAN.");
+    } finally {
+      setIsLocalConnecting(false);
+    }
+  };
+
+  useEffect(() => {
+    const handleOffline = () => {
+      openLocalWifiFallback(
+        "Internet connection was lost. Connect to the restaurant Wi-Fi and continue with the local server."
+      );
+    };
+
+    window.addEventListener("offline", handleOffline);
+    return () => window.removeEventListener("offline", handleOffline);
+  }, []);
+
   const slide = {
     enter:  { opacity: 0, x: 20  },
     center: { opacity: 1, x: 0   },
@@ -1041,19 +1176,23 @@ export default function LoginScreen() {
 
   // -- Render -----------------------------------------------------------------
   return (
-    <div style={{
-      minHeight: "100vh", width: "100%", background: Z.bg, display: "flex",
+    <div className="login-page" style={{
+      minHeight: "100dvh", width: "100%", background: Z.bg, display: "flex",
       flexDirection: "column", fontFamily: "'Segoe UI','Helvetica Neue',Arial,sans-serif",
     }}>
 
       {/* Hero image */}
-      <div style={{
+      <div className="login-hero" style={{
         position: "relative", width: "100%", height: "35vh",
         minHeight: 220, maxHeight: 300, overflow: "hidden", flexShrink: 0,
       }}>
-        <img
-          src="https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=900&q=80"
-          alt="Food"
+        <video
+          src={heroVideo}
+          poster={splashBg}
+          autoPlay
+          muted
+          loop
+          playsInline
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
         />
         <div style={{
@@ -1076,6 +1215,7 @@ export default function LoginScreen() {
 
       {/* Form sheet */}
       <motion.div
+        className="login-sheet"
         initial={{ y: 16, opacity: 0 }} animate={{ y: 0, opacity: 1 }}
         transition={{ delay: 0.2, duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
         style={{
@@ -1086,7 +1226,7 @@ export default function LoginScreen() {
       >
         <div style={{ width: 40, height: 5, borderRadius: 3, background: "#DDD", margin: "14px auto 20px" }} />
 
-        <div style={{ padding: "0 20px 40px" }}>
+        <div className="login-sheet-inner" style={{ padding: "0 20px 40px" }}>
           <AnimatePresence mode="wait">
 
             {/* -- PHASE 1: QR SCAN -- */}
@@ -1095,6 +1235,127 @@ export default function LoginScreen() {
                 initial={{ opacity: 0, x: 0 }} animate={{ opacity: 1, x: 0 }}
                 exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.3 }}>
                 <QRStep onTableConfirmed={handleTableConfirmed} />
+              </motion.div>
+            )}
+
+            {phase === "network" && (
+              <motion.div key="phase-network"
+                initial={{ opacity: 0, x: 30 }} animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: -30 }} transition={{ duration: 0.3 }}
+                style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {tableNumber && (
+                  <TableBadge
+                    tableNum={tableNumber}
+                    onRescan={() => { setPhase("scan"); setTableNumber(null); }}
+                  />
+                )}
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  <h2 style={{ margin: 0, fontSize: 22, fontWeight: 800, color: Z.text }}>
+                    Choose How To Start
+                  </h2>
+                  <p style={{ margin: 0, fontSize: 14, color: Z.sub, lineHeight: 1.6 }}>
+                    Start online for full login and cloud ordering, or connect to the restaurant Wi-Fi to keep ordering on the local DineIQ network if internet drops.
+                  </p>
+                </div>
+
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  <button
+                    onClick={handleStartOnline}
+                    style={{
+                      textAlign: "left",
+                      padding: "16px 18px",
+                      borderRadius: 16,
+                      border: `1.5px solid ${Z.border}`,
+                      background: Z.bg,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ fontSize: 16, fontWeight: 800, color: Z.text }}>Start Online</div>
+                    <div style={{ marginTop: 4, fontSize: 13, color: Z.sub }}>
+                      Login or sign up with DineIQ and place orders through the main backend.
+                    </div>
+                  </button>
+
+                  <button
+                    onClick={handleStartLocal}
+                    style={{
+                      textAlign: "left",
+                      padding: "16px 18px",
+                      borderRadius: 16,
+                      border: `1.5px solid ${Z.red}`,
+                      background: Z.redLight,
+                      cursor: "pointer",
+                    }}
+                  >
+                    <div style={{ fontSize: 16, fontWeight: 800, color: Z.text }}>Open Local Wi-Fi Mode</div>
+                    <div style={{ marginTop: 4, fontSize: 13, color: Z.sub }}>
+                      First connect this device to the restaurant Wi-Fi in device settings, then continue in local ordering mode backed by the on-site DineIQ server.
+                    </div>
+                    <div style={{ marginTop: 10, fontSize: 12, color: Z.text, fontWeight: 700 }}>
+                      Wi-Fi ID: <span style={{ color: Z.red }}>{LOCAL_WIFI_ID}</span>
+                    </div>
+                    <div style={{ marginTop: 4, fontSize: 12, color: Z.text, fontWeight: 700 }}>
+                      Password: <span style={{ color: Z.red }}>{LOCAL_WIFI_PASSWORD}</span>
+                    </div>
+                  </button>
+                </div>
+
+                <AnimatePresence>
+                  {showLocalWifiForm && (
+                    <motion.div
+                      initial={{ opacity: 0, y: 8 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -8 }}
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 12,
+                        padding: 16,
+                        borderRadius: 16,
+                        background: Z.surface,
+                        border: `1px solid ${Z.border}`,
+                      }}
+                    >
+                      <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
+                        <div style={{ fontSize: 16, fontWeight: 800, color: Z.text }}>
+                          Open Local Server
+                        </div>
+                        <div style={{ fontSize: 13, color: Z.sub, lineHeight: 1.6 }}>
+                          After connecting this device to the on-site Wi-Fi, open the local DineIQ server. Orders saved after this point will appear in the Dashboard as offline orders with
+                          <span style={{ fontWeight: 800, color: Z.text }}> pending_sync</span> and will sync into backend SQLite once the upstream backend is reachable.
+                        </div>
+                      </div>
+
+                      <SInput
+                        label="Local Wi-Fi ID"
+                        type="text"
+                        value={localWifiId}
+                        onChange={(e: any) => setLocalWifiId(e.target.value)}
+                        placeholder={LOCAL_WIFI_ID}
+                      />
+                      <SInput
+                        label="Local Wi-Fi Password"
+                        type="password"
+                        value={localWifiPassword}
+                        onChange={(e: any) => setLocalWifiPassword(e.target.value)}
+                        placeholder="Enter password after joining Wi-Fi"
+                      />
+
+                      <RedButton
+                        onClick={handleLocalWifiConnect}
+                        disabled={!localWifiId.trim() || !localWifiPassword.trim() || isLocalConnecting}
+                        loading={isLocalConnecting}
+                      >
+                        I'm Connected, Open Local Server →
+                      </RedButton>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+
+                <GhostButton onClick={() => setPhase("scan")}>
+                  Back to QR Scan
+                </GhostButton>
               </motion.div>
             )}
 
@@ -1292,6 +1553,8 @@ export default function LoginScreen() {
         @keyframes spin { to { transform: rotate(360deg); } }
         input::placeholder { color: #ABABAB !important; }
         * { -webkit-font-smoothing: antialiased; box-sizing: border-box; }
+        html, body, #root { min-height: 100%; }
+        body { margin: 0; overflow-x: hidden; }
         #qr-region video {
           width: 100% !important; height: 100% !important;
           object-fit: cover !important; border-radius: 0 !important;
@@ -1300,6 +1563,64 @@ export default function LoginScreen() {
         #qr-region > div:last-child { display: none !important; }
         input[type=number]::-webkit-inner-spin-button,
         input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; }
+
+        .login-page {
+          overflow-x: hidden;
+        }
+
+        @media (max-width: 640px) {
+          .login-hero {
+            height: 28vh !important;
+            min-height: 180px !important;
+            max-height: 240px !important;
+          }
+
+          .login-sheet {
+            max-width: 100% !important;
+            border-radius: 24px 24px 0 0 !important;
+            margin-top: -18px !important;
+            box-shadow: 0 -6px 24px rgba(0,0,0,0.1) !important;
+          }
+
+          .login-sheet-inner {
+            padding: 0 16px 28px !important;
+          }
+
+          .login-qr-step {
+            gap: 14px !important;
+          }
+
+          .login-qr-viewport {
+            width: min(100%, 300px) !important;
+            height: min(100vw - 48px, 300px) !important;
+          }
+
+          .login-manual-row {
+            flex-direction: column !important;
+          }
+
+          .login-manual-input,
+          .login-manual-button {
+            width: 100% !important;
+          }
+        }
+
+        @media (max-width: 420px) {
+          .login-hero {
+            height: 25vh !important;
+            min-height: 160px !important;
+          }
+
+          .login-sheet-inner {
+            padding: 0 14px 24px !important;
+          }
+
+          .login-qr-viewport {
+            width: min(100%, 272px) !important;
+            height: min(100vw - 40px, 272px) !important;
+            border-radius: 18px !important;
+          }
+        }
       `}</style>
     </div>
   );

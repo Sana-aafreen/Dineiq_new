@@ -47,9 +47,9 @@ MENU_CACHE_TTL: int     = 300   # seconds (5 minutes)
 def get_cached_menu() -> list[dict]:
     global _menu_cache, _menu_cache_ts
     if _menu_cache and (time.time() - _menu_cache_ts) < MENU_CACHE_TTL:
-        print(f"✅ Menu from cache ({len(_menu_cache)} items)")
+        print(f"Menu from cache ({len(_menu_cache)} items)")
         return _menu_cache
-    print("🔄 Fetching fresh menu from Sheets...")
+    print("Fetching fresh menu from Sheets...")
     _menu_cache    = menu_agent.get_menu()
 
     # Enrich the base menu_agent.get_menu() with isVeg for the chatbot filter
@@ -186,7 +186,7 @@ Latest user message: {user_message}
 JSON:"""
 
     raw = groq_client.call_groq_with_retry(prompt)
-    print(f"🧠 Intent raw: {raw}")
+    print(f"Intent raw: {raw}")
 
     try:
         clean = re.sub(r"```(?:json)?", "", raw or "").strip().strip("`")
@@ -266,7 +266,7 @@ def generate_structured_combos(menu: list[dict], menu_text: str, user_request: s
     """Ask Groq to return structured combo JSON from the real menu, then enrich with real Item_IDs."""
     prompt = f"{COMBO_JSON_PROMPT}\n\nUser requested: {user_request}\n\nMENU:\n{menu_text}\n\nJSON:"
     raw = groq_client.call_groq_with_retry(prompt)
-    print(f"🧩 Raw combo JSON: {raw[:300] if raw else 'None'}...")
+    print(f"Raw combo JSON: {raw[:300] if raw else 'None'}...")
 
     # Build a name → {id, price} lookup from real menu for post-processing
     name_lookup: dict[str, dict] = {}
@@ -291,7 +291,7 @@ def generate_structured_combos(menu: list[dict], menu_text: str, user_request: s
         if best_match:
             return best_match
 
-        print(f"⚠️ Item ID lookup failed for: '{item_name}' (cleaned: '{clean_name}')")
+        print(f"WARNING: Item ID lookup failed for: '{item_name}' (cleaned: '{clean_name}')")
         return {"id": "", "price": 0}
 
     try:
@@ -321,7 +321,7 @@ def generate_structured_combos(menu: list[dict], menu_text: str, user_request: s
 
         return combos
     except Exception as e:
-        print(f"⚠️ Combo JSON parse error: {e}")
+        print(f"WARNING: Combo JSON parse error: {e}")
         return []
 
 # ---------------------------------------------------------
@@ -334,7 +334,7 @@ def get_customer_details(email: str | None, phone: str | None, client_id: str | 
     try:
         rows = sheets_client.read_sheet_rows(CUSTOMER_AUTH_SHEET)
     except Exception as e:
-        print(f"⚠️ Error reading Customer_Auth: {e}")
+        print(f"WARNING: Error reading Customer_Auth: {e}")
         return None
 
     search_email = email.strip().lower() if email else None
@@ -393,7 +393,7 @@ def health():
 # ---------------------------------------------------------
 @chatbot_router.post("/llm-chat", response_model=ChatResponse)
 async def llm_chat(req: ChatRequest):
-    print("\n🔥 /llm-chat endpoint HIT (Agentic Loop)")
+    print("\n/llm-chat endpoint HIT (Agentic Loop)")
 
     try:
         # 1️⃣ Check if customer exists based on provided details
@@ -416,24 +416,24 @@ async def llm_chat(req: ChatRequest):
 
             if req.clientId:
                 # LOGGED IN
-                print(f"✅ User Logged In: {real_client_name}")
+                print(f"User Logged In: {real_client_name}")
                 user_context_instruction = f"User STATUS: LOGGED IN.\nName: {real_client_name}.\nINSTRUCTION: Address them warmly by name. Do NOT ask for login/signup."
             else:
                 # RECOGNIZED BUT NOT LOGGED IN
-                print(f"⚠️ User Registered but NOT Logged In: {real_client_name}")
+                print(f"User Registered but NOT Logged In: {real_client_name}")
                 user_context_instruction = f"User STATUS: REGISTERED BUT NOT LOGGED IN.\nName: {real_client_name}.\nEmail Matches: {db_email}.\nINSTRUCTION: Address them by name. You MUST politely ask them to LOGIN for the best experience. Assure them that this chat IS being saved to their account."
         else:
             # NOT REGISTERED / GUEST
-            print("❌ User NOT Registered / Guest")
+            print("User NOT Registered / Guest")
             user_context_instruction = f"User STATUS: GUEST (Unregistered).\nName provided: {real_client_name}.\nINSTRUCTION: You MUST politely suggest they SIGN UP. Warn them that 'Chat history is NOT saved for guests'. Reference the Sign Up page."
 
         # 2️⃣ STEP 1: Classify intent with Groq
-        print("🔍 Classifying intent...")
+        print("Classifying intent...")
         intent = classify_intent(req.userMessage, req.chatHistory)
         action  = intent.get("action", "general")
         filters = intent.get("filters", [])
         veg_only = intent.get("veg_only", False)
-        print(f"✅ Intent: action={action}, filters={filters}, veg_only={veg_only}")
+        print(f"Intent: action={action}, filters={filters}, veg_only={veg_only}")
 
         # 3️⃣ STEP 2: Get filtered menu from cache
         menu = []
@@ -442,9 +442,9 @@ async def llm_chat(req: ChatRequest):
             try:
                 menu = fetch_filtered_menu(filters, veg_only)
                 menu_text = format_menu_for_llm(menu)
-                print(f"🍽️ {len(menu)} menu items ready for LLM")
+                print(f"{len(menu)} menu items ready for LLM")
             except Exception as e:
-                print(f"❌ Menu fetch error: {e}")
+                print(f"ERROR: Menu fetch error: {e}")
 
         # 4️⃣ Build final prompt
         enhanced_system_prompt = f"{SYSTEM_PROMPT}\n\nCURRENT USER CONTEXT:\n{user_context_instruction}"
@@ -464,7 +464,7 @@ async def llm_chat(req: ChatRequest):
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
 
-        print("🚀 Starting Groq calls...")
+        print("Starting Groq calls...")
         if action == "suggest_combos" and menu_text:
             combo_task = loop.run_in_executor(
                 None, generate_structured_combos, menu, menu_text, req.userMessage
@@ -473,7 +473,7 @@ async def llm_chat(req: ChatRequest):
                 None, groq_client.call_groq_with_retry, reply_prompt
             )
             structured_combos, ai_reply = await asyncio.gather(combo_task, reply_task)
-            print(f"✅ Parallel done: {len(structured_combos)} combos + reply")
+            print(f"Parallel done: {len(structured_combos)} combos + reply")
         else:
             structured_combos = []
             ai_reply = await loop.run_in_executor(
@@ -489,7 +489,7 @@ async def llm_chat(req: ChatRequest):
         )
 
     except Exception as e:
-        print("❌ Agent error in llm_chat:", e)
+        print("ERROR: Agent error in llm_chat:", e)
         import traceback
         traceback.print_exc()
         return ChatResponse(response="Sorry, I'm having trouble connecting right now.")
@@ -524,7 +524,7 @@ async def save_chat(session: ChatSession):
     Receives chat session and saves it only if
     customer exists in Customer_Auth sheet.
     """
-    print("\n🔥 /save-chat endpoint HIT")
+    print("\n/save-chat endpoint HIT")
 
     try:
         # 1️⃣ Find existing customer (Try ID first, then email, then phone)
@@ -534,13 +534,13 @@ async def save_chat(session: ChatSession):
         customer_name = customer.get("Customer_Name") if customer else session.clientName
 
         if not customer:
-            print(f"⚠️ Guest Chat: Not registered. Chat NOT saved. (Name: {session.clientName})")
+            print(f"WARNING: Guest Chat not saved. (Name: {session.clientName})")
             return {
                 "status": "ignored",
                 "message": "Customer not registered. Chat not saved."
             }
 
-        print(f"✅ Customer Identified: {customer_name} ({customer_id})")
+        print(f"Customer Identified: {customer_name} ({customer_id})")
 
         # 2️⃣ Generate next Chat ID
         chat_id = generate_next_chat_id()
@@ -565,7 +565,7 @@ async def save_chat(session: ChatSession):
         # 5️⃣ Save
         sheets_client.append_row(CHATS_SHEET, row)
 
-        print(f"💾 Chat saved successfully: {chat_id}")
+        print(f"Chat saved successfully: {chat_id}")
 
         return {
             "status": "success",
@@ -574,7 +574,7 @@ async def save_chat(session: ChatSession):
         }
 
     except Exception as e:
-        print("❌ ERROR saving chat:", e)
+        print("ERROR saving chat:", e)
         return {
             "status": "error",
             "message": str(e)

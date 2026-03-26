@@ -1,4 +1,5 @@
 // src/utils/chatUtils.ts
+import { API_BASE_URL } from "@/config";
 export interface ComboIngredient {
   name: string;
   price: number;
@@ -94,7 +95,7 @@ export async function saveChatToBackend(sessionObject: ChatSession): Promise<any
   console.log("📤 Sending session to backend:", sessionObject);
 
   try {
-    const API_URL = import.meta.env.VITE_API_URL + "/chatbot/save-chat";
+    const API_URL = `${API_BASE_URL}/chatbot/save-chat`;
 
     const response = await fetch(API_URL, {
       method: "POST",

@@ -73,7 +73,7 @@ const StripeDummyModal: React.FC<StripeDummyModalProps> = ({ isOpen, onClose, on
                         <form onSubmit={handlePay} className="space-y-4 py-4">
                             <div className="space-y-2">
                                 <Label htmlFor="email">Email</Label>
-                                <Input id="email" type="email" placeholder="customer@example.com" required defaultValue={userEmail || "guest@dineiq.ai"} />
+                                <Input id="email" type="email" placeholder="customer@example.com" required defaultValue={userEmail || "guest@dineiq.com"} />
                             </div>
 
                             <div className="space-y-2">

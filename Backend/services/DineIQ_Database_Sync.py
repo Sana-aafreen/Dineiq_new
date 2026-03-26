@@ -151,12 +151,12 @@ def _map_to_sheet_row(sheet_name: str, data: dict, headers: list) -> list:
 
 async def perform_full_sync():
     """ Runs a full re-sync of all major tables to Google Sheets. """
-    print("🚀 Starting FULL synchronization to Google Sheets...")
+    print("Starting FULL synchronization to Google Sheets...")
     for table, sheet_name in TABLE_TO_SHEET.items():
         if table == "customer_auth": continue # Handled by customers table sync
         
         try:
-            print(f"📊 Refreshing '{sheet_name}' from table '{table}'...")
+            print(f"Refreshing '{sheet_name}' from table '{table}'...")
             # Fetch all data from table
             raw_rows = sqlite_db.fetch_all(f"SELECT * FROM {table}")
             enriched_rows = [_get_enriched_data(table, r) for r in raw_rows]
@@ -172,7 +172,7 @@ async def perform_full_sync():
                 headers = list(SHEET_COLUMN_MAPPING.get(sheet_name, {}).keys())
             
             if not headers:
-                print(f"⚠️ No headers found for {sheet_name}. Mapping failed.")
+                print(f"WARNING: No headers found for {sheet_name}. Mapping failed.")
                 continue
                 
             # Build DataFrame for update
@@ -180,9 +180,9 @@ async def perform_full_sync():
             df_new = pd.DataFrame(mapped_rows, columns=headers)
             
             sheets.update_sheet(sheet_name, df_new)
-            print(f"✅ Full sync completed for {sheet_name} ({len(raw_rows)} rows)")
+            print(f"Full sync completed for {sheet_name} ({len(raw_rows)} rows)")
         except Exception as e:
-            print(f"❌ Failed full sync for {table}: {e}")
+            print(f"ERROR: Failed full sync for {table}: {e}")
 
 async def start_progressive_sync(interval_seconds: int = 15):
     """
@@ -190,15 +190,15 @@ async def start_progressive_sync(interval_seconds: int = 15):
     from sqlite_db.sync_queue and applying them to Google Sheets.
     """
     if not GOOGLE_SHEETS_SYNC:
-        print("🚫 Google Sheets Sync is DISABLED in config.py.")
+        print("Google Sheets Sync is DISABLED in config.py.")
         sqlite_db.sync_queue.clear()
         return
 
     # Trigger a Full Sync on startup to ensure Sheet integrity
-    print("🔄 Performing Initial Full Sync to ensure Google Sheets are up to date...")
+    print("Performing initial full sync to ensure Google Sheets are up to date...")
     await perform_full_sync()
 
-    print("✅ Progressive Sync Worker Started.")
+    print("Progressive Sync Worker Started.")
     
     while True:
         try:
@@ -208,7 +208,7 @@ async def start_progressive_sync(interval_seconds: int = 15):
                 items_to_sync, sqlite_db.sync_queue = sqlite_db.sync_queue[:], []
             
             if items_to_sync:
-                print(f"🔄 Syncing {len(items_to_sync)} changes to Google Sheets...")
+                print(f"Syncing {len(items_to_sync)} changes to Google Sheets...")
                 
                 # To handle "cleared/deleted" sheets properly, if action is UPDATE
                 # or if we detect an empty target, we might just trigger full sync for that sheet.
@@ -233,7 +233,7 @@ async def start_progressive_sync(interval_seconds: int = 15):
                             row = _map_to_sheet_row(sheet_name, enriched, headers)
                             sheets.append_row(sheet_name, row)
                         except Exception as e:
-                            print(f"⚠️ Failed progressive sync (INSERT) for {table}: {e}")
+                            print(f"WARNING: Failed progressive sync (INSERT) for {table}: {e}")
                     
                     elif action == "UPDATE":
                         # For updates, we just perform a full sync on that specific sheet 
@@ -253,9 +253,9 @@ async def start_progressive_sync(interval_seconds: int = 15):
                                 sheets.update_sheet(sheet_name, df_new)
                                 processed_sheets.add(sheet_name)
                             except Exception as e:
-                                print(f"⚠️ Failed progressive sync (UPDATE) for {table}: {e}")
+                                print(f"WARNING: Failed progressive sync (UPDATE) for {table}: {e}")
         
         except Exception as e:
-            print(f"❌ Error in progressive sync worker: {e}")
+            print(f"ERROR: Error in progressive sync worker: {e}")
             
         await asyncio.sleep(interval_seconds)

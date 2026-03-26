@@ -11,10 +11,10 @@ import os
 if os.getenv("SERVICE_ACCOUNT_JSON_BASE64"):
     try:
         from utilities.credentials import setup_credentials
-        print("🔧 Decoding Base64 credentials for Render deployment...")
+        print("Decoding Base64 credentials for Render deployment...")
         setup_credentials()
-        print("✅ Credentials decoded successfully")
+        print("Credentials decoded successfully")
     except Exception as e:
-        print(f"❌ ERROR: Could not decode Base64 credentials: {e}")
-        print("⚠️  Application may fail if it needs these credentials")
+        print(f"ERROR: Could not decode Base64 credentials: {e}")
+        print("WARNING: Application may fail if it needs these credentials")
         # Don't raise - let the app try to start anyway

@@ -50,14 +50,19 @@ export function AppSidebar() {
 
   return (
     <Sidebar className="border-r border-sidebar-border">
-      <div className="p-4 border-b border-sidebar-border">
-        <div className="flex items-center gap-2 mb-2">
-          <div className="h-8 w-8 rounded-lg bg-sidebar-primary flex items-center justify-center">
+      <div className="border-b border-sidebar-border px-4 py-4">
+        <div className="mb-2 flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-sidebar-primary shadow-sm">
             <UtensilsCrossed className="h-4 w-4 text-sidebar-primary-foreground" />
           </div>
-          <span className="text-lg font-bold text-sidebar-foreground">DineIQ Admin</span>
+          <div className="min-w-0">
+            <span className="block truncate text-lg font-bold text-sidebar-foreground">DineIQ Admin</span>
+            <span className="block text-[11px] font-medium text-sidebar-foreground/60">
+              Online + local Wi-Fi operations
+            </span>
+          </div>
         </div>
-        <div className="text-xs text-sidebar-foreground/60 font-medium pl-1 flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 pl-1 text-xs font-medium text-sidebar-foreground/60">
           <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
           {format(time, "PPPP | p")}
         </div>
@@ -66,18 +71,18 @@ export function AppSidebar() {
         <SidebarGroup>
           <SidebarGroupLabel className="text-sidebar-foreground/60">Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu className="gap-1 px-2 pb-4">
               {mainItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild>
                     <NavLink
                       to={item.url}
                       end={item.url === "/"}
-                      className="flex items-center gap-3 px-3 py-2 rounded-md text-sidebar-foreground hover:bg-sidebar-accent transition-colors"
-                      activeClassName="bg-sidebar-primary text-sidebar-primary-foreground hover:bg-sidebar-primary"
+                      className="flex items-center gap-3 rounded-xl px-3 py-3 text-sm text-sidebar-foreground transition-colors hover:bg-sidebar-accent"
+                      activeClassName="bg-sidebar-primary text-sidebar-primary-foreground shadow-sm hover:bg-sidebar-primary"
                     >
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
+                      <item.icon className="h-4 w-4 shrink-0" />
+                      <span className="truncate">{item.title}</span>
                     </NavLink>
                   </SidebarMenuButton>
                 </SidebarMenuItem>

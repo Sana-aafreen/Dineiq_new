@@ -1,6 +1,7 @@
 import { MenuItem } from "@/lib/data";
 import { useCart } from "@/contexts/CartContext";
 import { Star, Plus, Minus, Heart } from "lucide-react";
+import OfflineImage from "./OfflineImage";
 
 interface DishCardProps {
   item: MenuItem;
@@ -30,7 +31,7 @@ export default function DishCard({ item, compact = false, source = "Menu" }: Dis
         {/* Left: Image */}
         <div className="relative flex-shrink-0">
           <div className="w-[80px] h-[80px] md:w-[90px] md:h-[90px] rounded-2xl overflow-hidden shadow-sm bg-gray-100">
-            <img
+            <OfflineImage
               src={item.image}
               alt={item.name}
               className="w-full h-full object-cover"
@@ -121,7 +122,7 @@ export default function DishCard({ item, compact = false, source = "Menu" }: Dis
     <div className="group relative bg-white rounded-3xl overflow-hidden border border-gray-100 hover:shadow-xl hover:border-orange-100 transition-all duration-300 w-full flex flex-col h-full">
       {/* Image Header with Overlays */}
       <div className="relative h-[168px] overflow-hidden bg-gray-100 flex-shrink-0">
-        <img
+        <OfflineImage
           src={item.image}
           alt={item.name}
           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"

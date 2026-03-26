@@ -1,6 +1,7 @@
 import { MenuItem } from "@/lib/data";
 import { useCart } from "@/contexts/CartContext";
 import { Star, Plus, Minus, Sparkles } from "lucide-react";
+import OfflineImage from "./OfflineImage";
 
 interface ComboCardProps {
   item: MenuItem;
@@ -23,7 +24,7 @@ export default function ComboCard({ item, source = "Combos" }: ComboCardProps) {
     <div className="group relative bg-white rounded-2xl overflow-hidden border border-gray-100 hover:shadow-lg transition-all duration-300 w-full flex flex-col h-full">
       {/* Image Header with Overlays */}
       <div className="relative h-[120px] overflow-hidden bg-gray-100 flex-shrink-0">
-        <img
+        <OfflineImage
           src={item.image}
           alt={item.name}
           className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"

@@ -3,10 +3,11 @@ import App from "./App.tsx";
 import "./index.css";
 import { registerSW } from "virtual:pwa-register";
 import { offlineApi } from "./utils/offlineApi";
+import { API_BASE_URL } from "./config";
 
 // ─── Wake up backend on app load ───
 const wakeBackend = () => {
-  fetch(`${import.meta.env.VITE_API_URL || "https://dineiq-backend.in"}/`)
+  fetch(`${API_BASE_URL}/`)
     .then(() => console.log("✅ DineIQ backend is awake"))
     .catch(() => console.log("⏳ Backend waking up..."));
 };

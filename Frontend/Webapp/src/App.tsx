@@ -33,10 +33,10 @@ const App = () => (
           <Toaster />
           <Sonner />
 
-          {/* PWA: Shows "You're offline" / "Back online" banner */}
-          <OfflineBanner />
-
           <BrowserRouter>
+            {/* PWA: Shows "You're offline" / "Back online" banner */}
+            <OfflineBanner />
+
             {/* Floating AI Button (accessible on all pages) */}
             <AIButton />
 

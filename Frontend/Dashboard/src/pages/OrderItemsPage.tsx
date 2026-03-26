@@ -2,9 +2,8 @@ import { useState, useEffect } from "react";
 import { DataTable } from "@/components/DataTable";
 import { KPICard } from "@/components/KPICard";
 import { ShoppingCart, Clock, CheckCircle, RefreshCcw } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { parseGVizJson, parsePrice } from "@/utils/parseGVizJson";
+import { fetchDashboardDataset } from "@/api";
 
 type OrderItem = {
   Order_Item_ID: string;
@@ -18,20 +17,15 @@ type OrderItem = {
 export default function OrderItemsPage() {
   const [data, setData] = useState<OrderItem[]>([]);
   const [loading, setLoading] = useState(false);
-  const SPREADSHEET_ID = import.meta.env.VITE_SPREADSHEET_ID;
 
   const fetchOrderItems = async () => {
     setLoading(true);
     try {
-      const res = await fetch(
-        `https://docs.google.com/spreadsheets/d/${SPREADSHEET_ID}/gviz/tq?tqx=out:json&sheet=Order_Items&headers=1`
-      );
-      const text = await res.text();
-      const json = JSON.parse(text.substr(47).slice(0, -2));
-      const rows: OrderItem[] = parseGVizJson(json, "Order_Items").map((r: any) => ({
+      const rows: OrderItem[] = (await fetchDashboardDataset("/dashboard/order-items", "order_items")).map((r: any) => ({
         ...r,
-        Item_Quantity: parsePrice(r.Item_Quantity),
-        Item_Price: parsePrice(r.Item_Price),
+        Item_Quantity: Number(r.Quantity || r.Item_Quantity || 0),
+        Item_Price: Number(r.Price || r.Item_Price || 0),
+        Item_Name: r.Item_Name || r.name || "Unknown",
       }));
       setData(rows);
     } catch (err) {
